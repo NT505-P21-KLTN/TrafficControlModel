@@ -97,7 +97,8 @@ def generate_intersection_map():
                     valid_intersections[agent_id] = {
                         'lat': lat,
                         'lng': lng,
-                        'environment': data['topology'].get('environment', {}) if 'topology' in data else {}
+                        'environment': data['topology'].get('environment', {}) if 'topology' in data else {},
+                        'connected_to': data.get('connected_to', [])  # Get explicit connections
                     }
                     
                     has_markers = True
@@ -105,27 +106,31 @@ def generate_intersection_map():
                 except (ValueError, TypeError) as e:
                     print(f"Error processing location for agent {agent_id}: {e}")
     
-    # Draw connections between intersections if they're close enough
+    # Draw connections between intersections based on explicit connections
     connections_drawn = set()
     for id1, info1 in valid_intersections.items():
-        for id2, info2 in valid_intersections.items():
-            if id1 != id2 and (id1, id2) not in connections_drawn and (id2, id1) not in connections_drawn:
-                # Calculate physical distance between intersections
+        # Get list of connected intersections from config
+        connected_to = info1.get('connected_to', [])
+        if isinstance(connected_to, str):
+            connected_to = [x.strip() for x in connected_to.split(',')]
+            
+        for id2 in connected_to:
+            if id2 in valid_intersections and (id1, id2) not in connections_drawn and (id2, id1) not in connections_drawn:
+                info2 = valid_intersections[id2]
+                # Calculate distance for tooltip
                 distance_km = haversine_distance(
                     (info1['lat'], info1['lng']), 
                     (info2['lat'], info2['lng'])
                 )
                 
-                # If they're close enough (e.g., within 1.5km), draw a connection
-                if distance_km < 1.5:
-                    folium.PolyLine(
-                        locations=[(info1['lat'], info1['lng']), (info2['lat'], info2['lng'])],
-                        color='blue',
-                        weight=2,
-                        opacity=0.7,
-                        tooltip=f"Distance: {distance_km:.2f} km"
-                    ).add_to(m)
-                    connections_drawn.add((id1, id2))
+                folium.PolyLine(
+                    locations=[(info1['lat'], info1['lng']), (info2['lat'], info2['lng'])],
+                    color='blue',
+                    weight=2,
+                    opacity=0.7,
+                    tooltip=f"Distance: {distance_km:.2f} km"
+                ).add_to(m)
+                connections_drawn.add((id1, id2))
     
     # If no valid markers were added, add a default one
     if not has_markers:
@@ -290,7 +295,8 @@ def calculate_intersection_sync_times():
     log_event(f"Calculated sync times between {len(intersections_with_locations)} intersections")
     for id1, targets in sync_times.items():
         for id2, sync_data in targets.items():
-            log_event(f"  {id1} → {id2}: Distance={sync_data['distance_km']}km, " +
+            log_event(f"  {id1} → {id2}: Distance={sync_data['distance_km']}km, "
+                      
                      f"Travel Time={sync_data['travel_time_sec']}s, " +
                      f"Optimal Offset={sync_data['optimal_offset_sec']}s")
     return sync_times
@@ -368,71 +374,71 @@ def serve_static(filename):
     """Serve static files"""
     return send_from_directory('static', filename)
 
-@app.route('/api/update', methods=['POST'])
-def update_data():
-    """Endpoint for agents to send their data"""
-    try:
-        # Todo: remove this full update log
-        # log_event(f"Received full update from agent: {request.json}")
-        data = request.json
-        agent_id = data.get('agent_id')
+# @app.route('/api/update', methods=['POST'])
+# def update_data():
+#     """Endpoint for agents to send their data"""
+#     try:
+#         # Todo: remove this full update log
+#         log_event(f"Received full update from agent: {json.dumps(request.json)}")
+#         data = request.json
+#         agent_id = data.get('agent_id')
         
-        if not agent_id:
-            log_event("ERROR: Received update without agent_id")
-            return jsonify({'status': 'error', 'message': 'Missing agent_id'}), 400
+#         if not agent_id:
+#             log_event("ERROR: Received update without agent_id")
+#             return jsonify({'status': 'error', 'message': 'Missing agent_id'}), 400
         
-        # Store the update time
-        last_update[agent_id] = time.time()
+#         # Store the update time
+#         last_update[agent_id] = time.time()
         
-        # Initialize agent data if it doesn't exist
-        if (agent_id not in agent_data):
-            agent_data[agent_id] = {}
-            log_event(f"New agent registered: {agent_id}")
+#         # Initialize agent data if it doesn't exist
+#         if (agent_id not in agent_data):
+#             agent_data[agent_id] = {}
+#             log_event(f"New agent registered: {agent_id}")
         
-        # Special handling for topology data - only update it once
-        topology_updated = False
-        if 'topology' in data and 'topology' not in agent_data[agent_id]:
-            log_event(f"Received topology data from Agent {agent_id}")
-            # Parse and store the topology data
-            agent_data[agent_id]['topology'] = data['topology']
-            topology_updated = True
-            # Generate an updated map now
-            try:
-                generate_intersection_map()
-            except Exception as e:
-                log_event(f"Error generating map after topology update: {e}")
+#         # Special handling for topology data - only update it once
+#         topology_updated = False
+#         if 'topology' in data and 'topology' not in agent_data[agent_id]:
+#             log_event(f"Received topology data from Agent {agent_id}")
+#             # Parse and store the topology data
+#             agent_data[agent_id]['topology'] = data['topology']
+#             topology_updated = True
+#             # Generate an updated map now
+#             try:
+#                 generate_intersection_map()
+#             except Exception as e:
+#                 log_event(f"Error generating map after topology update: {e}")
         
-        # Log main data points
-        log_message = f"Update from {agent_id}"
-        if 'last_episode' in data:
-            log_message += f", Episode: {data['last_episode']}"
-        if 'status' in data:
-            log_message += f", Status: {data['status']}"
-        if 'rewards' in data and data['rewards']:
-            log_message += f", Reward: {data['rewards'][-1]:.2f}" if data['rewards'] else ""
-        log_event(log_message)
+#         # Log main data points
+#         log_message = f"Update from {agent_id}"
+#         if 'last_episode' in data:
+#             log_message += f", Episode: {data['last_episode']}"
+#         if 'status' in data:
+#             log_message += f", Status: {data['status']}"
+#         if 'rewards' in data and data['rewards']:
+#             log_message += f", Reward: {data['rewards'][-1]:.2f}" if data['rewards'] else ""
+#         log_event(log_message)
         
-        # Update other agent data
-        for key, value in data.items():
-            if key != 'agent_id' and key != 'topology':
-                agent_data[agent_id][key] = value
+#         # Update other agent data
+#         for key, value in data.items():
+#             if key != 'agent_id' and key != 'topology':
+#                 agent_data[agent_id][key] = value
         
-        # If topology was updated, recalculate intersection sync times
-        if topology_updated:
-            sync_times = calculate_intersection_sync_times()
-            # Print sync times information to console for reference
-            log_event("Updated intersection synchronization times:")
-            for id1, targets in sync_times.items():
-                for id2, sync_data in targets.items():
-                    log_event(f"  {id1} → {id2}: Distance={sync_data['distance_km']}km, " +
-                             f"Travel Time={sync_data['travel_time_sec']}s, " +
-                             f"Optimal Offset={sync_data['optimal_offset_sec']}s")
+#         # If topology was updated, recalculate intersection sync times
+#         if topology_updated:
+#             sync_times = calculate_intersection_sync_times()
+#             # Print sync times information to console for reference
+#             log_event("Updated intersection synchronization times:")
+#             for id1, targets in sync_times.items():
+#                 for id2, sync_data in targets.items():
+#                     log_event(f"  {id1} → {id2}: Distance={sync_data['distance_km']}km, " +
+#                              f"Travel Time={sync_data['travel_time_sec']}s, " +
+#                              f"Optimal Offset={sync_data['optimal_offset_sec']}s")
         
-        return jsonify({'status': 'success'}), 200
+#         return jsonify({'status': 'success'}), 200
     
-    except Exception as e:
-        log_event(f"ERROR in update_data: {str(e)}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
+#     except Exception as e:
+#         log_event(f"ERROR in update_data: {str(e)}")
+#         return jsonify({'status': 'error', 'message': str(e)}), 500
 
 @app.route('/api/status', methods=['GET'])
 def get_status():
@@ -498,7 +504,7 @@ def receive_updates():
     """Endpoint for agents to send their data"""
     try:
         data = request.json
-        log_event(f"Received full update from agent: {data}")
+        log_event(f"Received update from agent: {data['agent_id']}")
         agent_id = data.get('agent_id')
         
         if not agent_id:
@@ -510,30 +516,46 @@ def receive_updates():
         
         # Initialize agent data if it doesn't exist
         if agent_id not in agent_data:
-            agent_data[agent_id] = {}
+            agent_data[agent_id] = {
+                'rewards': [],
+                'queue_lengths': [],
+                'waiting_times': [],
+                'status': 'unknown',
+                'last_episode': -1
+            }
             log_event(f"New agent registered: {agent_id}")
         
-        # Store the agent's state data if present
+        # Handle states data
         if 'states' in data:
-            log_event(f"Received state data from Agent {agent_id}")
             store_agent_states(agent_id, data['states'])
         
-        # Special handling for topology data - only update it once
+        # Handle one-time topology data
         if 'topology' in data and 'topology' not in agent_data[agent_id]:
-            log_event(f"Received topology data from Agent {agent_id}")
             agent_data[agent_id]['topology'] = data['topology']
             try:
                 generate_intersection_map()
             except Exception as e:
-                log_event(f"Error generating map after topology update: {e}")
+                log_event(f"Error generating map: {e}")
         
-        # Update other agent data
-        for key, value in data.items():
-            if key != 'agent_id' and key != 'topology' and key != 'states':
-                agent_data[agent_id][key] = value
+        # ACCUMULATE metrics data rather than replacing
+        if 'rewards' in data and data['rewards']:
+            agent_data[agent_id].setdefault('rewards', []).extend(data['rewards'])
+            
+        if 'queue_lengths' in data and data['queue_lengths']:
+            agent_data[agent_id].setdefault('queue_lengths', []).extend(data['queue_lengths'])
+            
+        if 'waiting_times' in data and data['waiting_times']:
+            agent_data[agent_id].setdefault('waiting_times', []).extend(data['waiting_times'])
+        
+        # Update scalar values
+        if 'status' in data:
+            agent_data[agent_id]['status'] = data['status']
+            
+        if 'last_episode' in data:
+            agent_data[agent_id]['last_episode'] = data['last_episode']
         
         return jsonify({'status': 'success'}), 200
-    
+        
     except Exception as e:
         log_event(f"ERROR in receive_updates: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -643,6 +665,50 @@ def calculate_travel_times(topology):
                 travel_times[(agent_id, connection['agent_id'])] = travel_time
     return travel_times
 
+
+
+def get_drl_optimized_sync_times():
+    """Get DRL-optimized synchronization times if available"""
+    sync_file = 'server_data/sync_times.json'
+    
+    try:
+        if os.path.exists(sync_file):
+            with open(sync_file, 'r') as f:
+                sync_times = json.load(f)
+            
+            # Check if this has DRL optimization flag
+            has_drl = False
+            for id1, targets in sync_times.items():
+                for id2, data in targets.items():
+                    if 'drl_optimized' in data and data['drl_optimized']:
+                        has_drl = True
+                        break
+                if has_drl:
+                    break
+            
+            if has_drl:
+                log_event("Using DRL-optimized synchronization times")
+                return sync_times
+    except Exception as e:
+        log_event(f"Error loading DRL sync times: {e}")
+    
+    # If not available or error, calculate them
+    return calculate_intersection_sync_times()
+
+@app.route('/api/sync_times', methods=['GET'])
+def get_sync_times():
+    """Get synchronization timing data"""
+    try:
+        sync_file = os.path.join(os.path.dirname(__file__), 'server_data', 'sync_times.json')
+        if os.path.exists(sync_file):
+            with open(sync_file, 'r') as f:
+                sync_times = json.load(f)
+            return jsonify(sync_times)
+        else:
+            return jsonify({}), 404
+    except Exception as e:
+        log_event(f"Error getting sync times: {e}")
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     # Create template files if they don't exist
