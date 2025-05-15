@@ -290,22 +290,31 @@ class IntersectionSyncEnv(gym.Env):
         count = 0
         
         for id, data in self.intersection_data.items():
-            # Get waiting time if available
-            if 'waiting_times' in data and data['waiting_times']:
-                total_waiting_time += data['waiting_times'][-1]
-            
-            # Get queue length if available
-            if 'queue_lengths' in data and data['queue_lengths']:
-                total_queue_length += data['queue_lengths'][-1]
-            
-            count += 1
+            # Get the latest state if available
+            if 'states' in data and data['states']:
+                latest_state = data['states'][-1]
+                
+                # Get waiting time from traffic data
+                if 'traffic_data' in latest_state:
+                    traffic_data = latest_state['traffic_data']
+                    if 'waiting_time' in traffic_data:
+                        total_waiting_time += traffic_data['waiting_time']
+                    
+                    # Get queue length from traffic data
+                    if 'queue_length' in traffic_data:
+                        total_queue_length += traffic_data['queue_length']
+                    
+                    count += 1
+                    logger.info(f"Collected metrics for {id}: waiting_time={traffic_data.get('waiting_time', 0)}, queue_length={traffic_data.get('queue_length', 0)}")
         
         if count > 0:
             avg_waiting_time = total_waiting_time / count
             avg_queue_length = total_queue_length / count
+            logger.info(f"Average metrics: waiting_time={avg_waiting_time:.2f}, queue_length={avg_queue_length:.2f}")
         else:
             avg_waiting_time = 0
             avg_queue_length = 0
+            logger.warning("No metrics collected from any intersection")
         
         return {
             'avg_waiting_time': avg_waiting_time,
