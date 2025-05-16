@@ -218,9 +218,20 @@ class IntersectionSyncEnv(gym.Env):
         """Reset the environment to an initial state"""
         super().reset(seed=seed)
         
-        # Clear history
+        # Initialize history with default values instead of clearing
+        default_waiting = 30.0  # Default waiting time in seconds
+        default_queue = 5.0    # Default queue length
+        
+        # Fill history with default values
         self.history['waiting_times'].clear()
         self.history['queue_lengths'].clear()
+        for _ in range(5):  # Initialize with 5 default values
+            self.history['waiting_times'].append(default_waiting)
+            self.history['queue_lengths'].append(default_queue)
+        
+        logger.info("Initialized history with default values:")
+        logger.info(f"  - Default waiting time: {default_waiting}")
+        logger.info(f"  - Default queue length: {default_queue}")
         
         # Recalculate spatial relationships to ensure fresh start
         self._calculate_spatial_relationships()
@@ -289,6 +300,8 @@ class IntersectionSyncEnv(gym.Env):
         total_queue_length = 0
         count = 0
         
+        logger.info("Starting to collect current metrics...")
+        
         for id, data in self.intersection_data.items():
             # Get the latest state if available
             if 'states' in data and data['states']:
@@ -297,20 +310,31 @@ class IntersectionSyncEnv(gym.Env):
                 # Get waiting time from traffic data
                 if 'traffic_data' in latest_state:
                     traffic_data = latest_state['traffic_data']
-                    if 'waiting_time' in traffic_data:
-                        total_waiting_time += traffic_data['waiting_time']
+                    waiting_time = traffic_data.get('waiting_time', 0)
+                    queue_length = traffic_data.get('queue_length', 0)
                     
-                    # Get queue length from traffic data
-                    if 'queue_length' in traffic_data:
-                        total_queue_length += traffic_data['queue_length']
+                    total_waiting_time += waiting_time
+                    total_queue_length += queue_length
                     
                     count += 1
-                    logger.info(f"Collected metrics for {id}: waiting_time={traffic_data.get('waiting_time', 0)}, queue_length={traffic_data.get('queue_length', 0)}")
+                    logger.info(f"Collected metrics for {id}:")
+                    logger.info(f"  - Waiting time: {waiting_time:.2f}")
+                    logger.info(f"  - Queue length: {queue_length:.2f}")
+                    logger.info(f"  - Step: {latest_state.get('step', 'N/A')}")
+                    if 'current_phase' in traffic_data:
+                        logger.info(f"  - Current phase: {traffic_data['current_phase']}")
+            else:
+                logger.warning(f"No states data available for intersection {id}")
         
         if count > 0:
             avg_waiting_time = total_waiting_time / count
             avg_queue_length = total_queue_length / count
-            logger.info(f"Average metrics: waiting_time={avg_waiting_time:.2f}, queue_length={avg_queue_length:.2f}")
+            logger.info(f"Summary of collected metrics:")
+            logger.info(f"  - Total waiting time: {total_waiting_time:.2f}")
+            logger.info(f"  - Total queue length: {total_queue_length:.2f}")
+            logger.info(f"  - Number of intersections: {count}")
+            logger.info(f"  - Average waiting time: {avg_waiting_time:.2f}")
+            logger.info(f"  - Average queue length: {avg_queue_length:.2f}")
         else:
             avg_waiting_time = 0
             avg_queue_length = 0
@@ -328,21 +352,50 @@ class IntersectionSyncEnv(gym.Env):
         """Calculate reward based on improvement in metrics"""
         reward = 0
         
+        logger.info("Starting reward calculation...")
+        logger.info(f"Current metrics: waiting_time={current_metrics['avg_waiting_time']:.2f}, queue_length={current_metrics['avg_queue_length']:.2f}")
+        
+        # Log current history state
+        logger.info("Current history state:")
+        logger.info(f"  - Waiting times history: {list(self.history['waiting_times'])}")
+        logger.info(f"  - Queue lengths history: {list(self.history['queue_lengths'])}")
+        
         # If we have history, compare with previous metrics
         if len(self.history['waiting_times']) > 1:
             # Calculate improvement in waiting time
             prev_waiting = self.history['waiting_times'][-2]
             curr_waiting = current_metrics['avg_waiting_time']
+            
+            # Add small epsilon to prevent division by zero
+            epsilon = 1e-6
+            prev_waiting = max(prev_waiting, epsilon)
+            curr_waiting = max(curr_waiting, epsilon)
+            
             waiting_improvement = prev_waiting - curr_waiting
             
             # Calculate improvement in queue length
             prev_queue = self.history['queue_lengths'][-2]
             curr_queue = current_metrics['avg_queue_length']
+            
+            # Add small epsilon to prevent division by zero
+            prev_queue = max(prev_queue, epsilon)
+            curr_queue = max(curr_queue, epsilon)
+            
             queue_improvement = prev_queue - curr_queue
+            
+            logger.info(f"Previous metrics: waiting_time={prev_waiting:.2f}, queue_length={prev_queue:.2f}")
+            logger.info(f"Improvements: waiting_time={waiting_improvement:.2f}, queue_length={queue_improvement:.2f}")
             
             # Combine improvements as reward
             # Give more weight to waiting time improvement
             reward = 0.7 * waiting_improvement + 0.3 * queue_improvement
+            
+            logger.info(f"Final reward calculation:")
+            logger.info(f"  - Waiting time component: {0.7 * waiting_improvement:.2f}")
+            logger.info(f"  - Queue length component: {0.3 * queue_improvement:.2f}")
+            logger.info(f"  - Total reward: {reward:.2f}")
+        else:
+            logger.info("No history available for reward calculation, returning 0")
         
         return reward
     
@@ -367,13 +420,17 @@ class IntersectionSyncEnv(gym.Env):
             
             # Queue length
             queue_length = 0
-            if 'queue_lengths' in data and data['queue_lengths']:
-                queue_length = data['queue_lengths'][-1]
+            if ('states' in data and data['states'] and 
+                'traffic_data' in data['states'][-1] and 
+                'queue_length' in data['states'][-1]['traffic_data']):
+                queue_length = data['states'][-1]['traffic_data']['queue_length']
             
             # Waiting time
             waiting_time = 0
-            if 'waiting_times' in data and data['waiting_times']:
-                waiting_time = data['waiting_times'][-1]
+            if ('states' in data and data['states'] and 
+                'traffic_data' in data['states'][-1] and 
+                'waiting_time' in data['states'][-1]['traffic_data']):
+                waiting_time = data['states'][-1]['traffic_data']['waiting_time']
             
             # Cycle time
             cycle_time = self.cycle_times.get(id, 38)
@@ -401,13 +458,22 @@ class IntersectionSyncEnv(gym.Env):
                     # Default values for unknown pairs
                     state_components.extend([0, 0, 0])
         
-        # Convert to numpy array and normalize
+        # Convert to numpy array
         state = np.array(state_components, dtype=np.float32)
         
-        # If state dimension doesn't match observation space, pad with zeros
-        if state.shape[0] < self.observation_space.shape[0]:
-            padding = np.zeros(self.observation_space.shape[0] - state.shape[0], dtype=np.float32)
+        # Calculate expected state dimension based on max_intersections
+        max_intersections = 10  # Maximum number of intersections
+        features_per_intersection = 4  # traffic volume, queue length, waiting time, cycle time
+        features_per_pair = 3  # distance, travel time, current offset
+        expected_dim = (max_intersections * features_per_intersection + 
+                       (max_intersections * (max_intersections - 1)) // 2 * features_per_pair)
+        
+        # Pad or truncate state to expected dimension
+        if state.shape[0] < expected_dim:
+            padding = np.zeros(expected_dim - state.shape[0], dtype=np.float32)
             state = np.concatenate([state, padding])
+        elif state.shape[0] > expected_dim:
+            state = state[:expected_dim]
         
         return state
     

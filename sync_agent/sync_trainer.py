@@ -18,11 +18,16 @@ logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler("sync_trainer.log"),
+        logging.FileHandler("sync_trainer.log", mode='a'),  # Use append mode
         logging.StreamHandler(sys.stdout)
     ]
 )
 logger = logging.getLogger("SyncTrainer")
+
+# Add a file handler specifically for the trainer
+trainer_handler = logging.FileHandler("sync_trainer.log", mode='a')
+trainer_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+logger.addHandler(trainer_handler)
 
 class SyncTrainer:
     """
@@ -234,6 +239,19 @@ class SyncTrainer:
                             logger.info(f"  - Waiting time: {traffic_data.get('waiting_time', 'N/A')}")
                             if 'avg_speed' in traffic_data:
                                 logger.info(f"  - Average speeds: {traffic_data['avg_speed']}")
+                
+                # Ensure topology data exists
+                if 'topology' not in data:
+                    logger.warning(f"Agent {agent_id} missing topology data, creating default topology")
+                    # Create default topology based on agent IDs
+                    all_agents = list(new_agent_data.keys())
+                    connected_agents = [a for a in all_agents if a != agent_id]
+                    data['topology'] = {
+                        'connected_intersections': connected_agents,
+                        'incoming_roads': [],
+                        'outgoing_roads': []
+                    }
+                    logger.info(f"Created default topology for {agent_id}: {data['topology']}")
             
             # Check for topology changes
             topology_changed = False
@@ -366,55 +384,75 @@ class SyncTrainer:
         """
         sync_times = {}
         
+        # Log the offsets we received
+        logger.info(f"Received offsets: {offsets}")
+        
         # For each intersection
         for id1 in self.agent_data.keys():
             sync_times[id1] = {}
             
-            # For each target intersection
+            # Calculate sync times for all other intersections
             for id2 in self.agent_data.keys():
                 if id1 != id2:
-                    # Check if we have offset data for this pair
+                    # Get basic spatial data
                     pair = tuple(sorted([id1, id2]))
+                    distance_km = self.env.distances.get(pair, 0)
+                    travel_time_sec = self.env.travel_times.get(pair, 0)
+                    
+                    logger.info(f"Processing pair {pair}:")
+                    logger.info(f"  - Distance: {distance_km} km")
+                    logger.info(f"  - Travel time: {travel_time_sec} sec")
+                    
+                    # Get speed data from traffic_data
+                    states1 = self.agent_data[id1].get('states', [])
+                    states2 = self.agent_data[id2].get('states', [])
+                    
+                    avg_speed = 40.0  # Default speed
+                    if states1 and states2:
+                        latest_state1 = states1[-1]
+                        latest_state2 = states2[-1]
+                        
+                        speeds1 = latest_state1.get('traffic_data', {}).get('avg_speed', {})
+                        speeds2 = latest_state2.get('traffic_data', {}).get('avg_speed', {})
+                        
+                        all_speeds = []
+                        all_speeds.extend(speeds1.values())
+                        all_speeds.extend(speeds2.values())
+                        
+                        if all_speeds:
+                            avg_speed = sum(all_speeds) / len(all_speeds)
+                    
+                    # Get offset from the environment or calculate default
                     if pair in offsets:
                         offset_sec = offsets[pair]
-                        
-                        # Get basic spatial data
-                        distance_km = self.env.distances.get(pair, 0)
-                        travel_time_sec = self.env.travel_times.get(pair, 0)
-                        
-                        # Get speed data from traffic_data
-                        states1 = self.agent_data[id1].get('states', [])
-                        states2 = self.agent_data[id2].get('states', [])
-                        
-                        avg_speed = 40.0  # Default speed
-                        if states1 and states2:
-                            latest_state1 = states1[-1]
-                            latest_state2 = states2[-1]
-                            
-                            speeds1 = latest_state1.get('traffic_data', {}).get('avg_speed', {})
-                            speeds2 = latest_state2.get('traffic_data', {}).get('avg_speed', {})
-                            
-                            all_speeds = []
-                            all_speeds.extend(speeds1.values())
-                            all_speeds.extend(speeds2.values())
-                            
-                            if all_speeds:
-                                avg_speed = sum(all_speeds) / len(all_speeds)
-                        
-                        # Store in the expected format
-                        sync_times[id1][id2] = {
-                            "distance_km": round(distance_km, 2),
-                            "travel_time_sec": round(travel_time_sec, 2),
-                            "optimal_offset_sec": round(offset_sec, 2),
-                            "cycle_time_sec": self.env.cycle_times.get(id1, 38),
-                            "drl_optimized": True,
-                            "avg_speed_kmh": round(avg_speed, 2)
-                        }
-                        
-                        logger.info(f"Formatted sync time for {id1} -> {id2}: {sync_times[id1][id2]}")
+                        logger.info(f"  - Using offset from environment: {offset_sec}")
+                    else:
+                        # Default offset is travel time modulo cycle time
+                        cycle_time = min(self.env.cycle_times.get(id1, 38), self.env.cycle_times.get(id2, 38))
+                        offset_sec = travel_time_sec % cycle_time
+                        logger.info(f"  - Using default offset: {offset_sec} (travel_time % cycle_time)")
+                    
+                    # Store in the expected format
+                    sync_times[id1][id2] = {
+                        "distance_km": round(distance_km, 2),
+                        "travel_time_sec": round(travel_time_sec, 2),
+                        "optimal_offset_sec": round(offset_sec, 2),
+                        "cycle_time_sec": self.env.cycle_times.get(id1, 38),
+                        "drl_optimized": True,
+                        "avg_speed_kmh": round(avg_speed, 2)
+                    }
+                    
+                    logger.info(f"Formatted sync time for {id1} -> {id2}: {sync_times[id1][id2]}")
         
         if not sync_times:
             logger.warning("No sync times were generated!")
+            # Log the agent data structure to help debug
+            logger.info("Agent data structure:")
+            for agent_id, data in self.agent_data.items():
+                logger.info(f"{agent_id}:")
+                logger.info(f"  - Has states: {'states' in data}")
+                if 'states' in data:
+                    logger.info(f"  - Number of states: {len(data['states'])}")
         else:
             logger.info(f"Generated sync times for {len(sync_times)} intersections")
         
