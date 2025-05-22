@@ -8,6 +8,9 @@ from add_vehicle import SimulationThread
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import traci
+import random
+
+
 
 class MainWindow(QMainWindow):
     def __init__(self):
