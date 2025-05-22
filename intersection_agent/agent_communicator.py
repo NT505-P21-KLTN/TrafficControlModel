@@ -7,6 +7,8 @@ import os
 import numpy as np
 import traci
 import logging
+from main_window import MainWindow
+
 
 logger = logging.getLogger(__name__)
 
@@ -201,65 +203,40 @@ class AgentCommunicatorTraining:
             return False
         
     def send_state(self, state, step, traffic_data=None):
-        """
-        Send the current state and traffic data to the central server
-        
-        Args:
-            state: The state array representing cell occupancy
-            step: Current simulation step
-            traffic_data: Additional traffic information for coordination
-        """
-        if not 'states' in self.data:
-            self.data['states'] = []
-        
-        # Get current traffic speeds from SUMO if available
-        avg_speeds = {}
+        """Send current state and traffic data to server"""
         try:
-            traffic_speeds = {}
-            for vehicle_id in traci.vehicle.getIDList():
-                speed = traci.vehicle.getSpeed(vehicle_id)
-                edge = traci.vehicle.getRoadID(vehicle_id)
-                if edge not in traffic_speeds:
-                    traffic_speeds[edge] = []
-                traffic_speeds[edge].append(speed)
+            data = {
+                'agent_id': self.agent_id,
+                'step': step,
+                'timestamp': time.time()
+            }
             
-            # Calculate average speed for each edge
-            for edge, speeds in traffic_speeds.items():
-                if speeds:
-                    avg_speeds[edge] = sum(speeds) / len(speeds)
+            if state is not None:
+                data['state'] = state.tolist()
             
-            # Add average speeds to traffic data
-            if traffic_data is None:
-                traffic_data = {}
-            traffic_data['avg_speed'] = avg_speeds
+            if traffic_data:
+                data.update(traffic_data)
             
-            logger.info(f"Calculated average speeds: {avg_speeds}")
+            # Add to current data for next sync
+            self.current_data['states'].append(data)
+            
+            # If we have vehicle transfer data, send it immediately
+            if traffic_data and 'vehicle_transfer' in traffic_data:
+                response = requests.post(
+                    f"{self.server_url}/api/vehicle_transfer",
+                    json=traffic_data['vehicle_transfer'],
+                    timeout=5
+                )
+                if response.status_code != 200:
+                    print(f"Failed to send vehicle transfer data: {response.status_code}")
+            
+            return True
         except Exception as e:
-            logger.error(f"Warning: Could not get traffic speeds: {e}")
-        
-        state_data = {
-            'step': step,
-            'state': state.tolist() if isinstance(state, np.ndarray) else state,
-            'timestamp': time.time(),
-            'traffic_data': traffic_data or {},
-            'speeds': avg_speeds  # Add speed data to state
-        }
-        
-        # Add to both master data and current data
-        self.data['states'].append(state_data)
-        self.current_data['states'].append(state_data)
-        
-        # Limit the number of states we store to prevent memory issues
-        if len(self.data['states']) > 100:  # Keep only the last 100 states
-            self.data['states'] = self.data['states'][-100:]
-        
-        # If it's been long enough since last sync, sync now
-        current_time = time.time()
-        if current_time - self.last_sync >= self.sync_interval:
-            self.sync_with_server()
+            print(f"Error sending state: {e}")
+            return False
     
     def get_coordination_data(self):
-        """Get coordination data from the server"""
+        """Get coordination data from server including incoming vehicles"""
         try:
             response = requests.get(
                 f"{self.server_url}/api/coordination/{self.agent_id}",
@@ -267,15 +244,35 @@ class AgentCommunicatorTraining:
             )
             if response.status_code == 200:
                 return response.json()
-            else:
-                print(f"Failed to get coordination data: {response.status_code}")
-                return None
+            return None
         except Exception as e:
             print(f"Error getting coordination data: {e}")
             return None
-
+    
+    def get_global_reward(self):
+        """Get the global reward for this agent from the central server"""
+        try:
+            response = requests.get(
+                f"{self.server_url}/api/agent/{self.agent_id}",
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                agent_data = response.json()
+                # Check if the agent has global rewards
+                if 'global_rewards' in agent_data and agent_data['global_rewards']:
+                    # Return the most recent global reward
+                    return agent_data['global_rewards'][-1]
+                return None  # No global rewards available
+            else:
+                print(f"Failed to get agent data, status code: {response.status_code}")
+                return None
+        except requests.exceptions.RequestException as e:
+            print(f"Connection error while getting global reward: {e}")
+            return None
+    
     def get_sync_timing(self):
-        """Get synchronization timing data from the server"""
+        """Get synchronization timing from the central server"""
         try:
             response = requests.get(
                 f"{self.server_url}/api/sync_times",
@@ -441,7 +438,7 @@ class AgentCommunicatorTesting:
                 if topology_data:
                     send_data['topology'] = topology_data
             if len(send_data['states']) > 0 or not self.topology_sent:
-                print("[TEST] Sending current data to server:", send_data)
+                #print("[TEST] Sending current data to server:", send_data)
                 response = requests.post(
                     f"{self.server_url}/api/update",
                     json=send_data,
@@ -607,6 +604,7 @@ class AgentCommunicatorTesting:
         self.current_data['config'] = config
 
     def update_model_info(self, model_info):
+        """Update information about the model"""
         self.data['model_info'] = model_info
         self.current_data['model_info'] = model_info
 
@@ -620,3 +618,39 @@ class AgentCommunicatorTesting:
         if waiting_time is not None:
             self.data['waiting_times'] = [float(waiting_time)]
             self.current_data['waiting_times'] = [float(waiting_time)]
+
+    def get_global_reward(self):
+        """Get the global reward for this agent from the central server"""
+        try:
+            response = requests.get(
+                f"{self.server_url}/api/agent/{self.agent_id}",
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                agent_data = response.json()
+                # Check if the agent has global rewards
+                if 'global_rewards' in agent_data and agent_data['global_rewards']:
+                    # Return the most recent global reward
+                    return agent_data['global_rewards'][-1]
+                return None  # No global rewards available
+            else:
+                print(f"Failed to get agent data, status code: {response.status_code}")
+                return None
+        except requests.exceptions.RequestException as e:
+            print(f"Connection error while getting global reward: {e}")
+            return None
+
+    def get_coordination_data(self):
+        """Get coordination data from server including incoming vehicles"""
+        try:
+            response = requests.get(
+                f"{self.server_url}/api/coordination/{self.agent_id}",
+                timeout=5
+            )
+            if response.status_code == 200:
+                return response.json()
+            return None
+        except Exception as e:
+            print(f"Error getting coordination data: {e}")
+            return None

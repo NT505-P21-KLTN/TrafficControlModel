@@ -513,85 +513,92 @@ class InteractiveSimulation(QObject):
             # Get current vehicles
             current_vehicles = set(traci.vehicle.getIDList())
             
-            # Find vehicles that have exited
-            exited = self._active_vehicles - current_vehicles
-            for vehicle_id in exited:
+            # Define boundary detection points (in meters from intersection)
+            boundary_distance = 50.0  # 50 meters from intersection
+            
+            # Check each vehicle's position
+            for vehicle_id in current_vehicles:
                 try:
-                    # Get the last road the vehicle was on
-                    last_road = traci.vehicle.getRoadID(vehicle_id)
-                    last_position = traci.vehicle.getPosition(vehicle_id)
-                    last_speed = traci.vehicle.getSpeed(vehicle_id)
-                    last_lane = traci.vehicle.getLaneIndex(vehicle_id)
+                    # Skip if vehicle is already being tracked for exit
+                    if vehicle_id in self._exited_vehicles:
+                        continue
+                        
+                    # Get vehicle's current road and position
+                    current_road = traci.vehicle.getRoadID(vehicle_id)
+                    current_position = traci.vehicle.getLanePosition(vehicle_id)
                     
-                    # Determine if vehicle exited through a boundary
-                    is_boundary_exit = False
-                    exit_direction = None
-                    
-                    # Check if vehicle exited through a boundary road
-                    if last_road in self.roads.values():
-                        # Get the road's position and dimensions
-                        road_shape = traci.edge.getShape(last_road)
-                        if road_shape:
-                            start_pos, end_pos = road_shape[0], road_shape[-1]
+                    # Check if vehicle is approaching a boundary
+                    if current_road in self.roads.values():
+                        # Check if vehicle is near the boundary point
+                        if current_position >= boundary_distance:
+                            # Get vehicle details
+                            vehicle_type = traci.vehicle.getTypeID(vehicle_id)
+                            route = traci.vehicle.getRouteID(vehicle_id)
+                            speed = traci.vehicle.getSpeed(vehicle_id)
+                            lane = traci.vehicle.getLaneIndex(vehicle_id)
+                            position = traci.vehicle.getPosition(vehicle_id)
                             
-                            # Calculate distance to road endpoints
-                            dist_to_start = ((last_position[0] - start_pos[0])**2 + 
-                                           (last_position[1] - start_pos[1])**2)**0.5
-                            dist_to_end = ((last_position[0] - end_pos[0])**2 + 
-                                         (last_position[1] - end_pos[1])**2)**0.5
+                            # Determine exit direction based on road
+                            exit_direction = None
+                            if current_road == 'N2TL':
+                                exit_direction = 'north'
+                            elif current_road == 'S2TL':
+                                exit_direction = 'south'
+                            elif current_road == 'E2TL':
+                                exit_direction = 'east'
+                            elif current_road == 'W2TL':
+                                exit_direction = 'west'
                             
-                            # If vehicle is close to either endpoint, consider it a boundary exit
-                            if dist_to_start < 5.0 or dist_to_end < 5.0:
-                                is_boundary_exit = True
-                                # Determine exit direction based on road and position
-                                if last_road == 'N2TL':
-                                    exit_direction = 'north'
-                                elif last_road == 'S2TL':
-                                    exit_direction = 'south'
-                                elif last_road == 'E2TL':
-                                    exit_direction = 'east'
-                                elif last_road == 'W2TL':
-                                    exit_direction = 'west'
-                    
-                    # Store vehicle info
-                    self._exited_vehicles[vehicle_id] = {
-                        'type': traci.vehicle.getTypeID(vehicle_id),
-                        'route': traci.vehicle.getRouteID(vehicle_id),
-                        'speed': last_speed,
-                        'lane': last_lane,
-                        'position': last_position,
-                        'is_boundary_exit': is_boundary_exit,
-                        'exit_direction': exit_direction,
-                        'destination': self.road_connections.get(last_road)
-                    }
-                    
-                    # Log vehicle exit
-                    print(f"Vehicle {vehicle_id} exited through {'boundary' if is_boundary_exit else 'internal'} " +
-                          f"at {last_position} on road {last_road}")
-                    
-                    # Send vehicle info to server if connected and it's a boundary exit
-                    if self._communicator and is_boundary_exit and exit_direction:
-                        self._communicator.send_state(None, self._step, {
-                            'vehicle_transfer': {
-                                'vehicle_id': vehicle_id,
-                                'type': traci.vehicle.getTypeID(vehicle_id),
-                                'route': traci.vehicle.getRouteID(vehicle_id),
-                                'speed': last_speed,
-                                'lane': last_lane,
-                                'position': last_position,
+                            # Store vehicle info
+                            self._exited_vehicles[vehicle_id] = {
+                                'type': vehicle_type,
+                                'route': route,
+                                'speed': speed,
+                                'lane': lane,
+                                'position': position,
+                                'is_boundary_exit': True,
                                 'exit_direction': exit_direction,
-                                'from_agent': self._agent_id,
-                                'to_agent': self.road_connections.get(last_road)
+                                'destination': self.road_connections.get(current_road)
                             }
-                        })
+                            
+                            # Log vehicle approaching boundary
+                            print(f"Vehicle {vehicle_id} approaching {exit_direction} boundary on {current_road}")
+                            
+                            # Send vehicle info to server if connected
+                            if self._communicator and exit_direction:
+                                self._communicator.send_state(None, self._step, {
+                                    'vehicle_transfer': {
+                                        'vehicle_id': vehicle_id,
+                                        'type': vehicle_type,
+                                        'route': route,
+                                        'speed': speed,
+                                        'lane': lane,
+                                        'position': position,
+                                        'exit_direction': exit_direction,
+                                        'from_agent': self._agent_id,
+                                        'to_agent': self.road_connections.get(current_road)
+                                    }
+                                })
+                            
                 except traci.exceptions.TraCIException:
                     # Vehicle is no longer in simulation, skip it
                     continue
                 except Exception as e:
-                    print(f"Error tracking exited vehicle {vehicle_id}: {e}")
+                    print(f"Error tracking vehicle {vehicle_id}: {e}")
+            
+            # Find vehicles that have actually exited
+            exited = self._active_vehicles - current_vehicles
+            for vehicle_id in exited:
+                # Remove from active vehicles
+                self._active_vehicles.discard(vehicle_id)
+                
+                # If we didn't track this vehicle at the boundary, log it
+                if vehicle_id not in self._exited_vehicles:
+                    print(f"Vehicle {vehicle_id} exited without boundary detection")
             
             # Update active vehicles
             self._active_vehicles = current_vehicles
+            
         except Exception as e:
             print(f"Error in _track_vehicles: {e}")
 
