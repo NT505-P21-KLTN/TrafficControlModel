@@ -202,49 +202,85 @@ class AgentCommunicatorTraining:
             print(f"Connection error during sync: {e}")
             return False
         
-    def send_state(self, state, step, traffic_data=None):
-        """Send current state and traffic data to server"""
+    def send_state(self, state, step, traffic_data):
+        """Send state to server and connected agents"""
         try:
-            data = {
-                'agent_id': self.agent_id,
-                'step': step,
-                'timestamp': time.time()
-            }
-            
-            if state is not None:
-                data['state'] = state.tolist()
-            
-            if traffic_data:
-                data.update(traffic_data)
-            
-            # Add to current data for next sync
-            self.current_data['states'].append(data)
-            
-            # If we have vehicle transfer data, send it immediately
-            if traffic_data and 'vehicle_transfer' in traffic_data:
-                response = requests.post(
-                    f"{self.server_url}/api/vehicle_transfer",
-                    json=traffic_data['vehicle_transfer'],
-                    timeout=5
-                )
+            # Send to server
+            if self.server_url:
+                # If there's vehicle transfer data, send it separately
+                if traffic_data and 'vehicle_transfer' in traffic_data:
+                    transfer_data = traffic_data['vehicle_transfer']
+                    try:
+                        response = requests.post(
+                            f"{self.server_url}/api/vehicle_transfer",
+                            json=transfer_data,
+                            timeout=5
+                        )
+                        if response.status_code != 200:
+                            print(f"Error sending vehicle transfer to server: {response.status_code}")
+                    except Exception as e:
+                        print(f"Error sending vehicle transfer: {e}")
+                    
+                    # Remove vehicle transfer from traffic data to avoid duplicate sending
+                    traffic_data = traffic_data.copy()
+                    del traffic_data['vehicle_transfer']
+                
+                # Send the rest of the state data
+                data = {
+                    'agent_id': self.agent_id,
+                    'step': step,
+                    'state': state.tolist() if state is not None else None,
+                    'traffic_data': traffic_data
+                }
+                response = requests.post(f"{self.server_url}/api/update", json=data)
                 if response.status_code != 200:
-                    print(f"Failed to send vehicle transfer data: {response.status_code}")
+                    print(f"Error sending state to server: {response.status_code}")
             
-            return True
+            # Send directly to connected agents
+            for agent_id, connection in self.direct_connections.items():
+                try:
+                    data = {
+                        'from_agent': self.agent_id,
+                        'step': step,
+                        'traffic_data': traffic_data
+                    }
+                    response = requests.post(f"{connection['url']}/api/agent_data", json=data)
+                    if response.status_code != 200:
+                        print(f"Error sending data to agent {agent_id}: {response.status_code}")
+                except Exception as e:
+                    print(f"Error sending data to agent {agent_id}: {e}")
+                    
         except Exception as e:
-            print(f"Error sending state: {e}")
-            return False
+            print(f"Error in send_state: {e}")
     
     def get_coordination_data(self):
         """Get coordination data from server including incoming vehicles"""
         try:
-            response = requests.get(
+            # Get vehicle transfers for this agent
+            transfer_response = requests.get(
+                f"{self.server_url}/api/vehicle_transfers",
+                params={'agent_id': self.agent_id},
+                timeout=5
+            )
+            
+            # Get general coordination data
+            coord_response = requests.get(
                 f"{self.server_url}/api/coordination/{self.agent_id}",
                 timeout=5
             )
-            if response.status_code == 200:
-                return response.json()
-            return None
+            
+            # Combine the responses
+            result = {}
+            if coord_response.status_code == 200:
+                result = coord_response.json()
+                
+            if transfer_response.status_code == 200:
+                transfers = transfer_response.json()
+                if 'coordination' not in result:
+                    result['coordination'] = {}
+                result['coordination']['incoming_vehicles'] = transfers
+                
+            return result if result else None
         except Exception as e:
             print(f"Error getting coordination data: {e}")
             return None
@@ -371,57 +407,185 @@ class AgentCommunicatorTraining:
             return None
 
 class AgentCommunicatorTesting:
-    def __init__(self, server_url, agent_id=None, mapping_config=None, env_file_path=None):
+    def __init__(self, server_url, agent_id, mapping_config=None, env_file_path=None):
+        """
+        Initialize the communicator with the server URL
+        
+        Args:
+            server_url: URL of the central server
+            agent_id: Unique ID for this agent
+            mapping_config: Dictionary containing mapping configuration
+            env_file_path: Path to the environment.net.xml file
+        """
         self.server_url = server_url
-        self.agent_id = agent_id or socket.gethostname()
+        self.agent_id = agent_id
         self.data = {
             'agent_id': self.agent_id,
-            'states': [],
-            'status': 'testing',
+            'rewards': [],
+            'queue_lengths': [],
+            'waiting_times': [],
+            'status': 'initializing',
+            'last_episode': -1,
             'config': {},
+            'model_info': {}
         }
+        
+        # Add new structure for current data (to be sent in next sync)
         self.current_data = {
             'agent_id': self.agent_id,
-            'states': [],
-            'status': 'testing',
+            'rewards': [],
+            'queue_lengths': [],
+            'waiting_times': [],
+            'status': 'initializing',
+            'last_episode': -1,
+            'states': []
         }
+        
+        # Store location data separately - will be sent only on first sync
         self.mapping_config = mapping_config if mapping_config else {}
         self.env_file_path = env_file_path
         self.env_info = self._extract_env_info() if env_file_path else None
         self.topology_sent = False
+        
+        # Initialize connected agents tracking
+        self.connected_agents = {}  # Store connected agent info
+        self.direct_connections = {}  # Store direct connections
+        
+        # Initialize connections from mapping config if available
+        if self.mapping_config and 'map' in self.mapping_config:
+            map_config = self.mapping_config['map']
+            if 'connected_to' in map_config:
+                for connected_agent in map_config['connected_to']:
+                    self.connected_agents[connected_agent] = {
+                        'url': None,  # Will be populated when agent connects
+                        'last_sync': 0,
+                        'data': None
+                    }
+        
         self.last_sync = 0
         self.sync_interval = 30  # seconds
         self.background_thread = None
         self.running = False
+        
+        # Create a directory to store data locally in case of connection issues
         self.backup_dir = f'agent_{self.agent_id}_data'
         os.makedirs(self.backup_dir, exist_ok=True)
-        print(f"Testing communicator initialized with ID: {self.agent_id}")
-
+        
+        print(f"Agent communicator initialized with ID: {self.agent_id}")
+        
+        # Log what will be sent on first sync
+        if self.mapping_config:
+            print(f"Mapping configuration will be sent on first sync")
+        if env_file_path:
+            print(f"Environment topology data will be sent on first sync")
+    
     def start_background_sync(self):
-        if self.background_thread is not None and self.background_thread.is_alive():
-            return
-        self.running = True
-        self.background_thread = threading.Thread(target=self._sync_loop, daemon=True)
-        self.background_thread.start()
-
-    def stop_background_sync(self):
-        self.running = False
-        if self.background_thread:
-            self.background_thread.join(timeout=5)
-
+        """Start background sync thread"""
+        if not self.running:
+            self.running = True
+            self.sync_thread = threading.Thread(target=self._sync_loop)
+            self.sync_thread.daemon = True
+            self.sync_thread.start()
+    
     def _sync_loop(self):
+        """Background sync loop"""
         while self.running:
             try:
-                self.sync_with_server()
+                current_time = time.time()
+                if current_time - self.last_sync >= self.sync_interval:
+                    self.sync_with_server()
+                    self._sync_with_connected_agents()
+                    self.last_sync = current_time
+                time.sleep(0.1)
             except Exception as e:
-                print(f"Error in background sync: {e}")
-                self._backup_data()
-            time.sleep(self.sync_interval)
-
-    def _backup_data(self):
-        backup_file = os.path.join(self.backup_dir, f'backup_{int(time.time())}.json')
-        with open(backup_file, 'w') as f:
-            json.dump(self.data, f)
+                print(f"Error in sync loop: {e}")
+    
+    def _sync_with_connected_agents(self):
+        """Sync directly with connected agents"""
+        for agent_id, agent_data in self.connected_agents.items():
+            try:
+                # Get data from connected agent
+                if agent_id in self.direct_connections:
+                    connection = self.direct_connections[agent_id]
+                    response = requests.get(f"{connection['url']}/api/agent_data")
+                    if response.status_code == 200:
+                        data = response.json()
+                        agent_data['data'] = data
+                        agent_data['last_sync'] = time.time()
+            except Exception as e:
+                print(f"Error syncing with agent {agent_id}: {e}")
+    
+    def send_state(self, state, step, traffic_data):
+        """Send state to server and connected agents"""
+        try:
+            # Send to server
+            if self.server_url:
+                # If there's vehicle transfer data, send it separately
+                if traffic_data and 'vehicle_transfer' in traffic_data:
+                    transfer_data = traffic_data['vehicle_transfer']
+                    try:
+                        response = requests.post(
+                            f"{self.server_url}/api/vehicle_transfer",
+                            json=transfer_data,
+                            timeout=5
+                        )
+                        if response.status_code != 200:
+                            print(f"Error sending vehicle transfer to server: {response.status_code}")
+                    except Exception as e:
+                        print(f"Error sending vehicle transfer: {e}")
+                    
+                    # Remove vehicle transfer from traffic data to avoid duplicate sending
+                    traffic_data = traffic_data.copy()
+                    del traffic_data['vehicle_transfer']
+                
+                # Send the rest of the state data
+                data = {
+                    'agent_id': self.agent_id,
+                    'step': step,
+                    'state': state.tolist() if state is not None else None,
+                    'traffic_data': traffic_data
+                }
+                response = requests.post(f"{self.server_url}/api/update", json=data)
+                if response.status_code != 200:
+                    print(f"Error sending state to server: {response.status_code}")
+            
+            # Send directly to connected agents
+            for agent_id, connection in self.direct_connections.items():
+                try:
+                    data = {
+                        'from_agent': self.agent_id,
+                        'step': step,
+                        'traffic_data': traffic_data
+                    }
+                    response = requests.post(f"{connection['url']}/api/agent_data", json=data)
+                    if response.status_code != 200:
+                        print(f"Error sending data to agent {agent_id}: {response.status_code}")
+                except Exception as e:
+                    print(f"Error sending data to agent {agent_id}: {e}")
+                    
+        except Exception as e:
+            print(f"Error in send_state: {e}")
+    
+    def get_connected_agent_data(self, agent_id):
+        """Get data from a connected agent"""
+        if agent_id in self.connected_agents:
+            agent_data = self.connected_agents[agent_id]
+            if time.time() - agent_data['last_sync'] < 5.0:  # Data is fresh if less than 5 seconds old
+                return agent_data['data']
+        return None
+    
+    def add_direct_connection(self, agent_id, url):
+        """Add a direct connection to another agent"""
+        self.direct_connections[agent_id] = {
+            'url': url,
+            'last_sync': 0
+        }
+        if agent_id not in self.connected_agents:
+            self.connected_agents[agent_id] = {
+                'url': None,
+                'last_sync': 0,
+                'data': None
+            }
 
     def sync_with_server(self):
         try:
@@ -461,42 +625,6 @@ class AgentCommunicatorTesting:
         except requests.exceptions.RequestException as e:
             print(f"[TEST] Connection error during sync: {e}")
             return False
-
-    def send_state(self, state, step, traffic_data=None):
-        if not 'states' in self.data:
-            self.data['states'] = []
-        avg_speeds = {}
-        try:
-            traffic_speeds = {}
-            for vehicle_id in traci.vehicle.getIDList():
-                speed = traci.vehicle.getSpeed(vehicle_id)
-                edge = traci.vehicle.getRoadID(vehicle_id)
-                if edge not in traffic_speeds:
-                    traffic_speeds[edge] = []
-                traffic_speeds[edge].append(speed)
-            for edge, speeds in traffic_speeds.items():
-                if speeds:
-                    avg_speeds[edge] = sum(speeds) / len(speeds)
-            if traffic_data is None:
-                traffic_data = {}
-            traffic_data['avg_speed'] = avg_speeds
-            logger.info(f"[TEST] Calculated average speeds: {avg_speeds}")
-        except Exception as e:
-            logger.error(f"[TEST] Warning: Could not get traffic speeds: {e}")
-        state_data = {
-            'step': step,
-            'state': state.tolist() if isinstance(state, np.ndarray) else state,
-            'timestamp': time.time(),
-            'traffic_data': traffic_data or {},
-            'speeds': avg_speeds
-        }
-        self.data['states'].append(state_data)
-        self.current_data['states'].append(state_data)
-        if len(self.data['states']) > 100:
-            self.data['states'] = self.data['states'][-100:]
-        current_time = time.time()
-        if current_time - self.last_sync >= self.sync_interval:
-            self.sync_with_server()
 
     def get_sync_timing(self):
         try:
@@ -644,13 +772,31 @@ class AgentCommunicatorTesting:
     def get_coordination_data(self):
         """Get coordination data from server including incoming vehicles"""
         try:
-            response = requests.get(
+            # Get vehicle transfers for this agent
+            transfer_response = requests.get(
+                f"{self.server_url}/api/vehicle_transfers",
+                params={'agent_id': self.agent_id},
+                timeout=5
+            )
+            
+            # Get general coordination data
+            coord_response = requests.get(
                 f"{self.server_url}/api/coordination/{self.agent_id}",
                 timeout=5
             )
-            if response.status_code == 200:
-                return response.json()
-            return None
+            
+            # Combine the responses
+            result = {}
+            if coord_response.status_code == 200:
+                result = coord_response.json()
+                
+            if transfer_response.status_code == 200:
+                transfers = transfer_response.json()
+                if 'coordination' not in result:
+                    result['coordination'] = {}
+                result['coordination']['incoming_vehicles'] = transfers
+                
+            return result if result else None
         except Exception as e:
             print(f"Error getting coordination data: {e}")
             return None

@@ -15,12 +15,16 @@ from collections import deque
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 from firebase_service import FirebaseService
+from global_reward import GlobalRewardFunction
 
 app = Flask(__name__)
 CORS(app)  # Cho phép truy cập từ Flutter Web
 
 # Initialize Firebase service
 firebase = FirebaseService()
+
+# Initialize global reward function
+global_reward = GlobalRewardFunction()
 
 # Global variables
 active_agents = {}
@@ -40,6 +44,9 @@ os.makedirs('server_data', exist_ok=True)
 os.makedirs('server_data/figures', exist_ok=True)
 os.makedirs('static', exist_ok=True)
 os.makedirs('templates', exist_ok=True)
+
+# Define file paths
+VEHICLE_TRANSFER_FILE = os.path.join(os.path.dirname(__file__), 'server_data', 'vehicle_transfers.json')
 
 def log_event(message):
     """Add a message to the server logs with timestamp"""
@@ -397,11 +404,37 @@ def get_data():
 
 @app.route('/api/agent/<agent_id>', methods=['GET'])
 def get_agent(agent_id):
-    """Get specific agent data"""
-    agent_data = firebase.get_agent_data(agent_id)
-    if agent_data:
-        return jsonify(agent_data)
-    return jsonify({'error': 'Agent not found'}), 404
+    """Get all data for a specific agent"""
+    if agent_id in agent_data:
+        return jsonify(agent_data[agent_id])
+    else:
+        return jsonify({'error': 'Agent not found'}), 404
+
+@app.route('/api/agent/<agent_id>/coordination', methods=['GET'])
+def get_agent_coordination(agent_id):
+    """Get coordination data for a specific agent"""
+    try:
+        # Get coordination data from memory
+        coordination_data = retrieve_coordination_data(agent_id)
+        
+        # Get vehicle transfers from file
+        vehicle_transfers = get_vehicle_transfers(agent_id)
+        
+        # Combine the data
+        if coordination_data:
+            coordination_data['vehicle_transfers'] = vehicle_transfers
+        
+        return jsonify(coordination_data or {})
+    except Exception as e:
+        log_event(f"ERROR getting coordination data for agent {agent_id}: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/coordination/<agent_id>', methods=['GET'])
+def get_coordination(agent_id):
+    """Get coordination data for a specific agent (alternative endpoint)"""
+    if agent_id not in agent_data:
+        return jsonify({"error": "Agent not found"}), 404
+    return jsonify(agent_data[agent_id].get('coordination', {}))
 
 @app.route('/api/agent/<agent_id>/config', methods=['POST'])
 def update_agent_config(agent_id):
@@ -521,6 +554,24 @@ def receive_updates():
             }
             log_event(f"New agent registered: {agent_id}")
         
+        # Handle vehicle transfers
+        if 'vehicle_transfer' in data:
+            transfer_data = data['vehicle_transfer']
+            log_event(f"Received vehicle transfer: {transfer_data['vehicle_id']} from {transfer_data['from_agent']} to {transfer_data['to_agent']}")
+            
+            # Store the transfer data in the destination agent's coordination data
+            to_agent = transfer_data['to_agent']
+            if to_agent not in agent_data:
+                agent_data[to_agent] = {'coordination': {'incoming_vehicles': []}}
+            elif 'coordination' not in agent_data[to_agent]:
+                agent_data[to_agent]['coordination'] = {'incoming_vehicles': []}
+            elif 'incoming_vehicles' not in agent_data[to_agent]['coordination']:
+                agent_data[to_agent]['coordination']['incoming_vehicles'] = []
+            
+            # Add the vehicle to the destination agent's incoming vehicles
+            agent_data[to_agent]['coordination']['incoming_vehicles'].append(transfer_data)
+            log_event(f"Added vehicle {transfer_data['vehicle_id']} to {to_agent}'s incoming vehicles")
+            print(f"Added vehicle {transfer_data['vehicle_id']} to {to_agent}'s incoming vehicles")
         # Handle states data
         if 'states' in data:
             store_agent_states(agent_id, data['states'])
@@ -581,32 +632,30 @@ def get_intersection_topology():
     return topology
 
 def store_coordination_data(agent_id, data):
-    """Store coordination data for an agent"""
-    coordination_storage[agent_id] = {
-        'data': data,
-        'timestamp': time.time()
-    }
+    """Store coordination data for sync agent"""
+    if agent_id not in coordination_storage:
+        coordination_storage[agent_id] = []
+    
+    # Keep only last 100 entries
+    if len(coordination_storage[agent_id]) >= 100:
+        coordination_storage[agent_id].pop(0)
+    
+    coordination_storage[agent_id].append(data)
 
 def retrieve_coordination_data(agent_id):
-    """Retrieve coordination data for an agent"""
-    # Return hardcoded data if nothing specific is stored
-    if (agent_id not in coordination_storage):
-        # Hardcoded coordination data with default timing
-        return {
-            'recommended_phase': 0,  # NS_GREEN phase
-            'duration_adjustment': 5,  # extend by 5 seconds
-            'priority_direction': 'NS'  # prioritize north-south direction
-        }
-    
-    return coordination_storage[agent_id]['data']
+    """Retrieve coordination data for sync agent"""
+    if agent_id not in coordination_storage:
+        return None
+    return coordination_storage[agent_id][-1] if coordination_storage[agent_id] else None
 
 def process_all_intersections():
     """Process states from all intersections to generate coordination"""
-    all_states = get_all_agent_states()
-    if not all_states:
-        return
+    all_states = {}
+    for agent_id, data in agent_data.items():
+        if 'states' in data and data['states']:
+            all_states[agent_id] = data['states']
     
-    # Hardcoded coordination logic - alternating priorities based on agent ID
+    # Store states for sync agent to use
     for agent_id, states in all_states.items():
         if not states:
             continue
@@ -614,32 +663,48 @@ def process_all_intersections():
         latest_state = states[-1]  # Get most recent state
         traffic_data = latest_state.get('traffic_data', {})
         
-        # Simple logic: if queue length is high in a direction, prioritize that direction
-        queue_length = traffic_data.get('queue_length', 0)
-        incoming = traffic_data.get('incoming_vehicles', {})
+        # Get vehicle statistics
+        vehicle_stats = agent_data[agent_id].get('vehicle_stats', {})
         
-        # Determine direction with highest traffic
-        ns_traffic = (incoming.get('N', 0) + incoming.get('S', 0))
-        ew_traffic = (incoming.get('E', 0) + incoming.get('W', 0))
+        # Store basic traffic data
+        store_coordination_data(agent_id, {
+            'timestamp': time.time(),
+            'queue_length': traffic_data.get('queue_length', 0),
+            'current_phase': traffic_data.get('current_phase', 0),
+            'incoming_vehicles': traffic_data.get('incoming_vehicles', {}),
+            'avg_speed': traffic_data.get('avg_speed', {}),
+            'vehicle_transfers': agent_data[agent_id].get('coordination', {}).get('incoming_vehicles', []),
+            'vehicle_stats': vehicle_stats
+        })
         
-        if ns_traffic > ew_traffic:
-            recommended_phase = 0  # NS_GREEN
-            priority = 'NS'
-        else:
-            recommended_phase = 2  # EW_GREEN
-            priority = 'EW'
-            
-        # Create coordination data
-        coordination_data = {
-            'recommended_phase': recommended_phase,
-            'duration_adjustment': min(5, queue_length),  # Up to 5 seconds based on queue
-            'priority_direction': priority
-        }
-        
-        # Store the coordination data
-        store_coordination_data(agent_id, coordination_data)
-        log_event(f"Generated coordination for agent {agent_id}: priority={priority}")
-        
+        # Clear processed vehicle transfers
+        if 'coordination' in agent_data[agent_id] and 'incoming_vehicles' in agent_data[agent_id]['coordination']:
+            agent_data[agent_id]['coordination']['incoming_vehicles'] = []
+
+def calculate_global_rewards():
+    """Calculate global rewards using the GlobalRewardFunction"""
+    # Initialize topology if needed
+    if not hasattr(global_reward, 'initialized'):
+        global_reward.initialize_agent_topology(agent_data)
+        global_reward.initialized = True
+        log_event("Initialized global reward topology")
+    
+    # Calculate global rewards
+    global_rewards = global_reward.calculate_global_reward(agent_data)
+    
+    # Store rewards in Firebase
+    for agent_id, reward in global_rewards.items():
+        try:
+            firebase.update_agent_performance(agent_id, {
+                'reward': reward,
+                'queue_length': agent_data[agent_id]['performance']['queue_length'] if 'performance' in agent_data[agent_id] else 0,
+                'waiting_time': agent_data[agent_id]['performance']['waiting_time'] if 'performance' in agent_data[agent_id] else 0
+            })
+        except Exception as e:
+            log_event(f"Error updating Firebase with global reward for {agent_id}: {str(e)}")
+    
+    return global_rewards
+
 def get_all_agent_states():
     """Retrieve states from all agents"""
     all_states = {}
@@ -706,6 +771,168 @@ def get_sync_times():
     except Exception as e:
         log_event(f"Error getting sync times: {e}")
         return jsonify({'error': str(e)}), 500
+
+def store_vehicle_transfer(transfer_data):
+    """Store vehicle transfer data in a JSON file"""
+    try:
+        # Create directory if it doesn't exist
+        os.makedirs(os.path.dirname(VEHICLE_TRANSFER_FILE), exist_ok=True)
+        log_event(f"Ensuring directory exists: {os.path.dirname(VEHICLE_TRANSFER_FILE)}")
+        
+        # Load existing data
+        existing_data = []
+        if os.path.exists(VEHICLE_TRANSFER_FILE):
+            try:
+                with open(VEHICLE_TRANSFER_FILE, 'r') as f:
+                    existing_data = json.load(f)
+                log_event(f"Successfully loaded existing vehicle transfer data from {VEHICLE_TRANSFER_FILE}")
+            except json.JSONDecodeError:
+                log_event(f"Error reading vehicle transfer file, creating new file at {VEHICLE_TRANSFER_FILE}")
+                existing_data = []
+        else:
+            log_event(f"Vehicle transfer file not found, creating new file at {VEHICLE_TRANSFER_FILE}")
+        
+        # Add timestamp to transfer data
+        transfer_data['stored_at'] = datetime.now().isoformat()
+        
+        # Append new transfer data
+        existing_data.append(transfer_data)
+        
+        # Save updated data
+        try:
+            with open(VEHICLE_TRANSFER_FILE, 'w') as f:
+                json.dump(existing_data, f, indent=2)
+            log_event(f"Successfully stored vehicle transfer data in {VEHICLE_TRANSFER_FILE}")
+            return True
+        except Exception as e:
+            log_event(f"Error writing to vehicle transfer file: {str(e)}")
+            return False
+            
+    except Exception as e:
+        log_event(f"ERROR storing vehicle transfer data: {str(e)}")
+        return False
+
+def get_vehicle_transfers(to_agent=None):
+    """Get vehicle transfer data for a specific agent"""
+    try:
+        if not os.path.exists(VEHICLE_TRANSFER_FILE):
+            log_event(f"Vehicle transfer file not found at {VEHICLE_TRANSFER_FILE}, returning empty list")
+            return []
+            
+        with open(VEHICLE_TRANSFER_FILE, 'r') as f:
+            transfers = json.load(f)
+            log_event(f"Successfully loaded {len(transfers)} vehicle transfers from {VEHICLE_TRANSFER_FILE}")
+            
+        if to_agent:
+            transfers = [t for t in transfers if t.get('to_agent') == to_agent]
+            log_event(f"Filtered to {len(transfers)} transfers for agent {to_agent}")
+            
+        return transfers
+    except Exception as e:
+        log_event(f"ERROR getting vehicle transfers: {str(e)}")
+        return []
+
+@app.route('/api/vehicle_transfers', methods=['GET'])
+def get_vehicle_transfers():
+    """Get all vehicle transfers or filter by agent"""
+    try:
+        agent_id = request.args.get('agent_id')
+        
+        if not os.path.exists(VEHICLE_TRANSFER_FILE):
+            return jsonify([])
+            
+        with open(VEHICLE_TRANSFER_FILE, 'r') as f:
+            all_transfers = json.load(f)
+            
+        if agent_id:
+            # Filter transfers for the specific agent
+            transfers = [t for t in all_transfers if t.get('to_agent') == agent_id]
+        else:
+            transfers = all_transfers
+            
+        return jsonify(transfers)
+    except Exception as e:
+        log_event(f"ERROR getting vehicle transfers: {str(e)}")
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/vehicle_transfer', methods=['POST'])
+def receive_vehicle_transfer():
+    """Endpoint for receiving vehicle transfer data between intersections"""
+    try:
+        transfer_data = request.json
+        if not transfer_data or not isinstance(transfer_data, dict):
+            return jsonify({'status': 'error', 'message': 'Invalid transfer data format'}), 400
+            
+        required_fields = ['vehicle_id', 'from_agent', 'to_agent', 'type', 'speed', 'waiting_time']
+        missing_fields = [field for field in required_fields if field not in transfer_data]
+        if missing_fields:
+            return jsonify({'status': 'error', 'message': f'Missing required fields: {", ".join(missing_fields)}'}), 400
+            
+        log_event(f"Received vehicle transfer: {transfer_data['vehicle_id']} from {transfer_data['from_agent']} to {transfer_data['to_agent']}")
+        log_event(f"Vehicle details: type={transfer_data['type']}, speed={transfer_data['speed']:.2f}, waiting_time={transfer_data['waiting_time']:.2f}")
+        
+        # Store the transfer data in the file
+        if store_vehicle_transfer(transfer_data):
+            # Also store in memory for immediate access
+            to_agent = transfer_data['to_agent']
+            if to_agent not in agent_data:
+                agent_data[to_agent] = {'coordination': {'incoming_vehicles': []}}
+            elif 'coordination' not in agent_data[to_agent]:
+                agent_data[to_agent]['coordination'] = {'incoming_vehicles': []}
+            elif 'incoming_vehicles' not in agent_data[to_agent]['coordination']:
+                agent_data[to_agent]['coordination']['incoming_vehicles'] = []
+            
+            # Add the vehicle to the destination agent's incoming vehicles
+            agent_data[to_agent]['coordination']['incoming_vehicles'].append(transfer_data)
+            log_event(f"Added vehicle {transfer_data['vehicle_id']} to {to_agent}'s incoming vehicles")
+            
+            return jsonify({'status': 'success'})
+        else:
+            return jsonify({'status': 'error', 'message': 'Failed to store vehicle transfer data'}), 500
+            
+    except Exception as e:
+        log_event(f"ERROR in receive_vehicle_transfer: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+def delete_vehicle_transfer(vehicle_id):
+    """Delete vehicle transfer data for a specific vehicle"""
+    try:
+        if not os.path.exists(VEHICLE_TRANSFER_FILE):
+            log_event(f"Vehicle transfer file not found at {VEHICLE_TRANSFER_FILE}")
+            return False
+            
+        with open(VEHICLE_TRANSFER_FILE, 'r') as f:
+            transfers = json.load(f)
+            
+        # Find and remove the transfer data for the specified vehicle
+        original_length = len(transfers)
+        transfers = [t for t in transfers if t.get('vehicle_id') != vehicle_id]
+        
+        if len(transfers) < original_length:
+            # Save the updated data
+            with open(VEHICLE_TRANSFER_FILE, 'w') as f:
+                json.dump(transfers, f, indent=2)
+            log_event(f"Successfully deleted vehicle transfer data for vehicle {vehicle_id}")
+            return True
+        else:
+            log_event(f"No transfer data found for vehicle {vehicle_id}")
+            return False
+            
+    except Exception as e:
+        log_event(f"ERROR deleting vehicle transfer data: {str(e)}")
+        return False
+
+@app.route('/api/vehicle_transfer/<vehicle_id>', methods=['DELETE'])
+def delete_transfer(vehicle_id):
+    """Endpoint for deleting vehicle transfer data after successful spawning"""
+    try:
+        if delete_vehicle_transfer(vehicle_id):
+            return jsonify({'status': 'success'})
+        else:
+            return jsonify({'status': 'error', 'message': 'Vehicle transfer data not found'}), 404
+    except Exception as e:
+        log_event(f"ERROR in delete_transfer: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == '__main__':
     # Create template files if they don't exist

@@ -2,13 +2,16 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QHBoxLayout, QPushButton, QLabel, QComboBox, 
                             QLineEdit, QTableWidget, QTableWidgetItem, QGroupBox,
                             QCheckBox, QSlider, QSpinBox, QRadioButton, QFrame, QHeaderView,
-                            QSplitter)
+                            QSplitter, QMessageBox)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal
 from add_vehicle import SimulationThread
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 import traci
 import random
+import os
+import sys
+from sumolib import checkBinary
 
 
 
@@ -532,15 +535,52 @@ class MainWindow(QMainWindow):
         self.step_label.setText(f"Steps: {step}")
     
     def update_vehicles(self, vehicles):
+        """Update the vehicle table with current vehicle data"""
         self.vehicle_table.setRowCount(len(vehicles))
         for row, (vid, data) in enumerate(vehicles.items()):
-            self.vehicle_table.setItem(row, 0, QTableWidgetItem(vid))
-            self.vehicle_table.setItem(row, 1, QTableWidgetItem(data.get('type', 'standard_car')))
-            self.vehicle_table.setItem(row, 2, QTableWidgetItem(data['route']))
-            self.vehicle_table.setItem(row, 3, QTableWidgetItem(data['road']))
-            self.vehicle_table.setItem(row, 4, QTableWidgetItem(str(data['lane'])))
-            self.vehicle_table.setItem(row, 5, QTableWidgetItem(str(data['speed'])))
-            self.vehicle_table.setItem(row, 6, QTableWidgetItem(str(data['waiting'])))
+            try:
+                # Handle both dictionary and string data formats
+                if isinstance(data, dict):
+                    vehicle_type = data.get('type', 'standard_car')
+                    route = data.get('route', '')
+                    road = data.get('road', '')
+                    lane = str(data.get('lane', ''))
+                    speed = str(data.get('speed', '0'))
+                    waiting = str(data.get('waiting', '0'))
+                else:
+                    # If data is a string, try to parse it
+                    vehicle_type = 'standard_car'
+                    route = ''
+                    road = ''
+                    lane = ''
+                    speed = '0'
+                    waiting = '0'
+                    
+                    # Try to extract vehicle type from the ID
+                    if '_' in vid:
+                        parts = vid.split('_')
+                        if len(parts) >= 2:
+                            vehicle_type = parts[0]
+                            if len(parts) >= 3:
+                                route = parts[1] + '_' + parts[2]
+                
+                self.vehicle_table.setItem(row, 0, QTableWidgetItem(vid))
+                self.vehicle_table.setItem(row, 1, QTableWidgetItem(vehicle_type))
+                self.vehicle_table.setItem(row, 2, QTableWidgetItem(route))
+                self.vehicle_table.setItem(row, 3, QTableWidgetItem(road))
+                self.vehicle_table.setItem(row, 4, QTableWidgetItem(lane))
+                self.vehicle_table.setItem(row, 5, QTableWidgetItem(speed))
+                self.vehicle_table.setItem(row, 6, QTableWidgetItem(waiting))
+            except Exception as e:
+                print(f"Error updating vehicle row {row} for vehicle {vid}: {e}")
+                # Set default values if there's an error
+                self.vehicle_table.setItem(row, 0, QTableWidgetItem(vid))
+                self.vehicle_table.setItem(row, 1, QTableWidgetItem('unknown'))
+                self.vehicle_table.setItem(row, 2, QTableWidgetItem(''))
+                self.vehicle_table.setItem(row, 3, QTableWidgetItem(''))
+                self.vehicle_table.setItem(row, 4, QTableWidgetItem(''))
+                self.vehicle_table.setItem(row, 5, QTableWidgetItem('0'))
+                self.vehicle_table.setItem(row, 6, QTableWidgetItem('0'))
     
     def update_statistics(self, stats):
         for direction in ["north", "south", "east", "west"]:
@@ -1008,6 +1048,53 @@ class MainWindow(QMainWindow):
         self.stats_table.item(row, 11).setText(f"{stats['avg']['queue']:.1f}")
         self.stats_table.item(row, 12).setText(f"{stats['avg']['waiting']:.1f}s")
         self.stats_table.item(row, 13).setText(f"{stats['avg']['length']:.1f}m")
+
+    def _setup_traffic_light_controls(self):
+        """Setup traffic light control buttons"""
+        control_frame = QFrame()
+        control_layout = QVBoxLayout()
+        
+        # Create button groups for each direction
+        ns_group = QGroupBox("North-South")
+        ns_layout = QVBoxLayout()
+        self.ns_green_btn = QPushButton("NS Green")
+        self.ns_yellow_btn = QPushButton("NS Yellow")
+        ns_layout.addWidget(self.ns_green_btn)
+        ns_layout.addWidget(self.ns_yellow_btn)
+        ns_group.setLayout(ns_layout)
+        
+        ew_group = QGroupBox("East-West")
+        ew_layout = QVBoxLayout()
+        self.ew_green_btn = QPushButton("EW Green")
+        self.ew_yellow_btn = QPushButton("EW Yellow")
+        ew_layout.addWidget(self.ew_green_btn)
+        ew_layout.addWidget(self.ew_yellow_btn)
+        ew_group.setLayout(ew_layout)
+        
+        # Connect button signals
+        self.ns_green_btn.clicked.connect(lambda: self._handle_traffic_light_click(0))  # NS Green
+        self.ns_yellow_btn.clicked.connect(lambda: self._handle_traffic_light_click(1))  # NS Yellow
+        self.ew_green_btn.clicked.connect(lambda: self._handle_traffic_light_click(4))  # EW Green
+        self.ew_yellow_btn.clicked.connect(lambda: self._handle_traffic_light_click(5))  # EW Yellow
+        
+        control_layout.addWidget(ns_group)
+        control_layout.addWidget(ew_group)
+        control_frame.setLayout(control_layout)
+        
+        return control_frame
+
+    def _handle_traffic_light_click(self, phase):
+        """Handle traffic light control button clicks"""
+        if not self.sim_thread.running:
+            QMessageBox.warning(self, "Warning", "Simulation is not running")
+            return
+        
+        try:
+            self.sim_thread.set_traffic_light_phase(phase)
+            print(f"Set traffic light phase to {phase}")
+        except Exception as e:
+            QMessageBox.critical(self, "Error", f"Failed to set traffic light phase: {str(e)}")
+            print(f"Error setting traffic light phase: {e}")
 
 if __name__ == "__main__":
     # Initialize SUMO
