@@ -183,6 +183,7 @@ class TestingSimulationWithServer(Simulation):
 
             # Choose the light phase to activate
             action = self._choose_action(current_state)
+            print("Agent chose action:  ", action)
 
             # If the chosen phase is different from the last phase, activate the yellow phase
             if self._step != 0 and old_action != action:

@@ -148,7 +148,7 @@ class MainWindow(QMainWindow):
         self.speed_slider = QSlider(Qt.Horizontal)
         self.speed_slider.setMinimum(1)
         self.speed_slider.setMaximum(50)  # Increased from 10 to 50
-        self.speed_slider.setValue(5)  # Default to 5x speed
+        self.speed_slider.setValue(1)  # Default to 5x speed
         self.speed_slider.valueChanged.connect(self.update_speed)
         speed_layout.addWidget(self.speed_slider)
         layout.addLayout(speed_layout)
