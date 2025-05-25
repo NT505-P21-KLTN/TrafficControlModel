@@ -252,7 +252,7 @@ class AgentCommunicatorTraining:
                     
         except Exception as e:
             print(f"Error in send_state: {e}")
-    
+            
     def get_coordination_data(self):
         """Get coordination data from server including incoming vehicles"""
         try:
@@ -284,29 +284,7 @@ class AgentCommunicatorTraining:
         except Exception as e:
             print(f"Error getting coordination data: {e}")
             return None
-    
-    def get_global_reward(self):
-        """Get the global reward for this agent from the central server"""
-        try:
-            response = requests.get(
-                f"{self.server_url}/api/agent/{self.agent_id}",
-                timeout=5
-            )
-            
-            if response.status_code == 200:
-                agent_data = response.json()
-                # Check if the agent has global rewards
-                if 'global_rewards' in agent_data and agent_data['global_rewards']:
-                    # Return the most recent global reward
-                    return agent_data['global_rewards'][-1]
-                return None  # No global rewards available
-            else:
-                print(f"Failed to get agent data, status code: {response.status_code}")
-                return None
-        except requests.exceptions.RequestException as e:
-            print(f"Connection error while getting global reward: {e}")
-            return None
-    
+
     def get_sync_timing(self):
         """Get synchronization timing from the central server"""
         try:
@@ -746,28 +724,6 @@ class AgentCommunicatorTesting:
         if waiting_time is not None:
             self.data['waiting_times'] = [float(waiting_time)]
             self.current_data['waiting_times'] = [float(waiting_time)]
-
-    def get_global_reward(self):
-        """Get the global reward for this agent from the central server"""
-        try:
-            response = requests.get(
-                f"{self.server_url}/api/agent/{self.agent_id}",
-                timeout=5
-            )
-            
-            if response.status_code == 200:
-                agent_data = response.json()
-                # Check if the agent has global rewards
-                if 'global_rewards' in agent_data and agent_data['global_rewards']:
-                    # Return the most recent global reward
-                    return agent_data['global_rewards'][-1]
-                return None  # No global rewards available
-            else:
-                print(f"Failed to get agent data, status code: {response.status_code}")
-                return None
-        except requests.exceptions.RequestException as e:
-            print(f"Connection error while getting global reward: {e}")
-            return None
 
     def get_coordination_data(self):
         """Get coordination data from server including incoming vehicles"""
