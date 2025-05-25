@@ -60,6 +60,7 @@ class MainWindow(QMainWindow):
         # Add toggle button for auto spawn controls
         toggle_button = QPushButton("Hide Auto Spawn Controls")
         toggle_button.clicked.connect(self.toggle_auto_spawn_panel)
+        toggle_button.setStyleSheet("QPushButton { padding: 12px 24px; }")  # Add padding to all sides
         left_layout.addWidget(toggle_button)
         
         # Create auto spawn controls container
@@ -109,20 +110,28 @@ class MainWindow(QMainWindow):
         plot_group.setLayout(plot_layout)
         left_layout.addWidget(plot_group)
         
-        # Add left panel to splitter
-        splitter.addWidget(self.left_panel)
+        # Make left panel scrollable
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setWidget(self.left_panel)
+        left_scroll.setStyleSheet(f"QScrollArea {{ background: transparent; border: none; }}")
+        splitter.addWidget(left_scroll)
 
         # Create right panel for other controls
-        right_panel = QWidget()
-        right_layout = QVBoxLayout(right_panel)
+        self.right_panel = QWidget()
+        right_layout = QVBoxLayout(self.right_panel)
         right_layout.setContentsMargins(0, 0, 0, 0)
         self.create_control_panel(right_layout)
         self.create_vehicle_panel(right_layout)
         self.create_vehicle_table(right_layout)
         self.create_statistics_panel(right_layout)
         
-        # Add right panel to splitter
-        splitter.addWidget(right_panel)
+        # Make right panel scrollable
+        right_scroll = QScrollArea()
+        right_scroll.setWidgetResizable(True)
+        right_scroll.setWidget(self.right_panel)
+        right_scroll.setStyleSheet(f"QScrollArea {{ background: transparent; border: none; }}")
+        splitter.addWidget(right_scroll)
         
         # Set initial sizes (40% left, 60% right)
         splitter.setSizes([640, 960])
