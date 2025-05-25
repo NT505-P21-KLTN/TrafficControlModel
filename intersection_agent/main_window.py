@@ -2,24 +2,38 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QHBoxLayout, QPushButton, QLabel, QComboBox, 
                             QLineEdit, QTableWidget, QTableWidgetItem, QGroupBox,
                             QCheckBox, QSlider, QSpinBox, QRadioButton, QFrame, QHeaderView,
-                            QSplitter, QMessageBox)
-from PyQt5.QtCore import Qt, QThread, pyqtSignal
+                            QSplitter, QMessageBox, QScrollArea)
+from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
+from PyQt5.QtGui import QFont, QIcon
 from add_vehicle import SimulationThread
 from matplotlib.figure import Figure
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
+import matplotlib.pyplot as plt
 import traci
 import random
 import os
 import sys
 from sumolib import checkBinary
+from material_theme import (MaterialStylesheet, MaterialShadow, MaterialUtils, 
+                          MaterialColors, MaterialTypography, MaterialAnimations)
 
 
 
 class MainWindow(QMainWindow):
     def __init__(self):
         super().__init__()
-        self.setWindowTitle("Traffic Simulation Control")
-        self.setGeometry(100, 100, 1600, 1000)  # Increased width for better horizontal layout
+        self.setWindowTitle("Traffic Simulation Control - Material Design")
+        self.setGeometry(100, 100, 1600, 1000)
+        
+        # Apply Material Design theme
+        self.setStyleSheet(MaterialStylesheet.get_main_stylesheet())
+        
+        # Set application font
+        app_font = MaterialTypography.get_font("body_medium")
+        self.setFont(app_font)
+        
+        # Apply elevation shadow to main window
+        MaterialShadow.apply_elevation(self, elevation=2)
 
         # Create simulation thread FIRST
         self.sim_thread = SimulationThread()
@@ -121,79 +135,94 @@ class MainWindow(QMainWindow):
     
     def create_control_panel(self, parent_layout):
         group = QGroupBox("Simulation Control")
+        MaterialShadow.apply_elevation(group, elevation=1)
         layout = QHBoxLayout()
+        layout.setSpacing(16)
+        layout.setContentsMargins(20, 20, 20, 20)
         
-        # Start/Stop button
+        # Start/Stop button - Primary style
         self.start_button = QPushButton("Start Simulation")
+        MaterialUtils.set_button_style(self.start_button, "primary")
+        self.start_button.setFont(MaterialTypography.get_font("label_large"))
         self.start_button.clicked.connect(self.toggle_simulation)
         layout.addWidget(self.start_button)
         
-        # Render mode toggle (changed to checkbox)
+        # Render mode toggle - Secondary style
         self.render_mode_check = QCheckBox("Simple Shapes")
-        self.render_mode_check.setChecked(True)  # Default to simple shapes
+        self.render_mode_check.setChecked(True)
+        self.render_mode_check.setFont(MaterialTypography.get_font("body_medium"))
         self.render_mode_check.stateChanged.connect(self.toggle_render_mode)
         layout.addWidget(self.render_mode_check)
         
-        # Status label
+        # Status label - Title style
         self.status_label = QLabel("Status: Not running")
+        MaterialUtils.set_label_style(self.status_label, "title")
         layout.addWidget(self.status_label)
         
-        # Step counter
+        # Step counter - Body style
         self.step_label = QLabel("Steps: 0")
+        self.step_label.setFont(MaterialTypography.get_font("body_large"))
         layout.addWidget(self.step_label)
         
-        # Speed control
-        speed_layout = QVBoxLayout()
-        speed_layout.addWidget(QLabel("Simulation Speed:"))
+        # Speed control container
+        speed_container = QWidget()
+        speed_layout = QVBoxLayout(speed_container)
+        speed_layout.setSpacing(8)
+        
+        speed_label = QLabel("Simulation Speed:")
+        speed_label.setFont(MaterialTypography.get_font("label_medium"))
+        speed_layout.addWidget(speed_label)
+        
         self.speed_slider = QSlider(Qt.Horizontal)
         self.speed_slider.setMinimum(1)
-        self.speed_slider.setMaximum(50)  # Increased from 10 to 50
-        self.speed_slider.setValue(1)  # Default to 5x speed
+        self.speed_slider.setMaximum(50)
+        self.speed_slider.setValue(1)
         self.speed_slider.valueChanged.connect(self.update_speed)
         speed_layout.addWidget(self.speed_slider)
-        layout.addLayout(speed_layout)
+        
+        layout.addWidget(speed_container)
         
         group.setLayout(layout)
         parent_layout.addWidget(group)
     
     def create_auto_spawn_panel(self, parent_layout):
         group = QGroupBox("Auto Spawn Controls")
+        MaterialShadow.apply_elevation(group, elevation=1)
         layout = QVBoxLayout()
-        layout.setSpacing(5)  # Reduce spacing between elements
+        layout.setSpacing(16)
+        layout.setContentsMargins(20, 20, 20, 20)
         
-        # Basic controls
-        basic_layout = QVBoxLayout()
-        basic_layout.setSpacing(5)
+        # Basic controls container
+        basic_container = QWidget()
+        basic_layout = QVBoxLayout(basic_container)
+        basic_layout.setSpacing(16)
         
         # Enable/disable auto spawn
         self.auto_spawn_check = QCheckBox("Enable Auto Spawn")
-        self.auto_spawn_check.setChecked(True)  # Default enabled
+        self.auto_spawn_check.setChecked(True)
+        self.auto_spawn_check.setFont(MaterialTypography.get_font("body_large"))
         self.auto_spawn_check.stateChanged.connect(self.toggle_auto_spawn)
         basic_layout.addWidget(self.auto_spawn_check)
         
         # Initialize auto spawn as enabled in the simulation thread
-        self.sim_thread.auto_spawn = True  # Default active
+        self.sim_thread.auto_spawn = True
         
-        # Distribution presets
+        # Distribution presets with Material Design styling
         preset_group = QGroupBox("Traffic Pattern")
+        MaterialShadow.apply_elevation(preset_group, elevation=1)
         preset_layout = QVBoxLayout()
+        preset_layout.setSpacing(8)
         
         # Create radio buttons for presets
         self.preset_buttons = []
         preset_names = [
-            "Urban Rush Hour",
-            "Highway Traffic",
-            "Mixed Traffic",
-            "Emergency Heavy",
-            "N-S Dominant",
-            "E-W Dominant",
-            "Diagonal",
-            "Circular"
+            "Urban Rush Hour", "Highway Traffic", "Mixed Traffic", "Emergency Heavy",
+            "N-S Dominant", "E-W Dominant", "Diagonal", "Circular"
         ]
         
-        # Create radio buttons
         for i, name in enumerate(preset_names):
             radio = QRadioButton(name)
+            radio.setFont(MaterialTypography.get_font("body_medium"))
             radio.clicked.connect(lambda checked, idx=i+1: self.apply_distribution_preset(idx) if checked else None)
             self.preset_buttons.append(radio)
             preset_layout.addWidget(radio)
@@ -201,72 +230,106 @@ class MainWindow(QMainWindow):
         preset_group.setLayout(preset_layout)
         basic_layout.addWidget(preset_group)
         
-        # Spawn interval
+        # Spawn interval with Material Design styling
         interval_group = QGroupBox("Spawn Interval")
+        MaterialShadow.apply_elevation(interval_group, elevation=1)
         interval_layout = QVBoxLayout()
-        interval_layout.setSpacing(2)
+        interval_layout.setSpacing(12)
         
-        fixed_interval_layout = QHBoxLayout()
-        fixed_interval_layout.addWidget(QLabel("Fixed:"))
+        # Fixed interval controls
+        fixed_interval_container = QWidget()
+        fixed_interval_layout = QHBoxLayout(fixed_interval_container)
+        fixed_interval_layout.setContentsMargins(0, 0, 0, 0)
+        
+        fixed_label = QLabel("Fixed:")
+        fixed_label.setFont(MaterialTypography.get_font("label_medium"))
+        fixed_interval_layout.addWidget(fixed_label)
+        
         self.interval_spin = QSpinBox()
         self.interval_spin.setMinimum(1)
         self.interval_spin.setMaximum(100)
-        self.interval_spin.setValue(4)  # Default to 4
+        self.interval_spin.setValue(4)
         self.interval_spin.valueChanged.connect(self.update_spawn_interval)
         fixed_interval_layout.addWidget(self.interval_spin)
-        interval_layout.addLayout(fixed_interval_layout)
+        interval_layout.addWidget(fixed_interval_container)
         
-        random_interval_layout = QHBoxLayout()
-        self.random_interval_check = QCheckBox("Random")
-        self.random_interval_check.setChecked(True)  # Default enabled
+        # Random interval controls
+        self.random_interval_check = QCheckBox("Random Interval")
+        self.random_interval_check.setChecked(True)
+        self.random_interval_check.setFont(MaterialTypography.get_font("body_medium"))
         self.random_interval_check.stateChanged.connect(self.toggle_random_interval)
-        random_interval_layout.addWidget(self.random_interval_check)
+        interval_layout.addWidget(self.random_interval_check)
         
-        min_max_layout = QHBoxLayout()
-        min_max_layout.addWidget(QLabel("Min:"))
+        # Min/Max interval controls
+        min_max_container = QWidget()
+        min_max_layout = QHBoxLayout(min_max_container)
+        min_max_layout.setContentsMargins(0, 0, 0, 0)
+        
+        min_label = QLabel("Min:")
+        min_label.setFont(MaterialTypography.get_font("label_small"))
+        min_max_layout.addWidget(min_label)
+        
         self.min_interval_spin = QSpinBox()
         self.min_interval_spin.setMinimum(1)
         self.min_interval_spin.setMaximum(50)
-        self.min_interval_spin.setValue(4)  # Default to 4
+        self.min_interval_spin.setValue(4)
         self.min_interval_spin.valueChanged.connect(self.update_min_interval)
         min_max_layout.addWidget(self.min_interval_spin)
         
-        min_max_layout.addWidget(QLabel("Max:"))
+        max_label = QLabel("Max:")
+        max_label.setFont(MaterialTypography.get_font("label_small"))
+        min_max_layout.addWidget(max_label)
+        
         self.max_interval_spin = QSpinBox()
         self.max_interval_spin.setMinimum(1)
         self.max_interval_spin.setMaximum(100)
         self.max_interval_spin.setValue(15)
         self.max_interval_spin.valueChanged.connect(self.update_max_interval)
         min_max_layout.addWidget(self.max_interval_spin)
-        random_interval_layout.addLayout(min_max_layout)
-        interval_layout.addLayout(random_interval_layout)
         
+        interval_layout.addWidget(min_max_container)
         interval_group.setLayout(interval_layout)
         basic_layout.addWidget(interval_group)
         
-        # Vehicles per spawn
+        # Vehicle count controls
         count_group = QGroupBox("Vehicles per Spawn")
+        MaterialShadow.apply_elevation(count_group, elevation=1)
         count_layout = QVBoxLayout()
-        count_layout.setSpacing(2)
+        count_layout.setSpacing(12)
         
-        fixed_count_layout = QHBoxLayout()
-        fixed_count_layout.addWidget(QLabel("Fixed:"))
+        # Fixed count controls
+        fixed_count_container = QWidget()
+        fixed_count_layout = QHBoxLayout(fixed_count_container)
+        fixed_count_layout.setContentsMargins(0, 0, 0, 0)
+        
+        count_label = QLabel("Fixed:")
+        count_label.setFont(MaterialTypography.get_font("label_medium"))
+        fixed_count_layout.addWidget(count_label)
+        
         self.count_spin = QSpinBox()
         self.count_spin.setMinimum(1)
         self.count_spin.setMaximum(10)
-        self.count_spin.setValue(5)  # Default to 5
+        self.count_spin.setValue(5)
         self.count_spin.valueChanged.connect(self.update_spawn_count)
         fixed_count_layout.addWidget(self.count_spin)
-        count_layout.addLayout(fixed_count_layout)
+        count_layout.addWidget(fixed_count_container)
         
-        random_count_layout = QHBoxLayout()
-        self.random_count_check = QCheckBox("Random")
-        self.random_count_check.setChecked(True)  # Default enabled
+        # Random count controls
+        self.random_count_check = QCheckBox("Random Count")
+        self.random_count_check.setChecked(True)
+        self.random_count_check.setFont(MaterialTypography.get_font("body_medium"))
         self.random_count_check.stateChanged.connect(self.toggle_random_count)
-        random_count_layout.addWidget(self.random_count_check)
+        count_layout.addWidget(self.random_count_check)
         
-        min_max_count_layout = QHBoxLayout()
-        min_max_count_layout.addWidget(QLabel("Min:"))
+        # Min/Max count controls
+        min_max_count_container = QWidget()
+        min_max_count_layout = QHBoxLayout(min_max_count_container)
+        min_max_count_layout.setContentsMargins(0, 0, 0, 0)
+        
+        min_count_label = QLabel("Min:")
+        min_count_label.setFont(MaterialTypography.get_font("label_small"))
+        min_max_count_layout.addWidget(min_count_label)
+        
         self.min_count_spin = QSpinBox()
         self.min_count_spin.setMinimum(1)
         self.min_count_spin.setMaximum(5)
@@ -274,29 +337,43 @@ class MainWindow(QMainWindow):
         self.min_count_spin.valueChanged.connect(self.update_min_count)
         min_max_count_layout.addWidget(self.min_count_spin)
         
-        min_max_count_layout.addWidget(QLabel("Max:"))
+        max_count_label = QLabel("Max:")
+        max_count_label.setFont(MaterialTypography.get_font("label_small"))
+        min_max_count_layout.addWidget(max_count_label)
+        
         self.max_count_spin = QSpinBox()
         self.max_count_spin.setMinimum(1)
         self.max_count_spin.setMaximum(10)
-        self.max_count_spin.setValue(6)  # Default to 6
+        self.max_count_spin.setValue(6)
+        self.max_count_spin.valueChanged.connect(self.update_max_count)
         min_max_count_layout.addWidget(self.max_count_spin)
-        random_count_layout.addLayout(min_max_count_layout)
-        count_layout.addLayout(random_count_layout)
         
+        count_layout.addWidget(min_max_count_container)
         count_group.setLayout(count_layout)
         basic_layout.addWidget(count_group)
         
-        layout.addLayout(basic_layout)
+        layout.addWidget(basic_container)
         
-        # Vehicle type distribution
+        # In the create_auto_spawn_panel method, modify the vehicle type distribution section:
+# Around line 225-262
+
+        # Vehicle type distribution with Material Design
         type_group = QGroupBox("Vehicle Type Distribution")
-        type_layout = QVBoxLayout()
-        type_layout.setSpacing(2)
+        MaterialShadow.apply_elevation(type_group, elevation=1)
+        type_container = QWidget()
+        type_layout = QVBoxLayout(type_container)
+        type_layout.setSpacing(8)
         
         self.type_sliders = {}
         for vehicle_type, percentage in self.sim_thread.vehicle_types.items():
-            slider_layout = QHBoxLayout()
-            slider_layout.addWidget(QLabel(f"{vehicle_type}:"))
+            slider_container = QWidget()
+            slider_layout = QHBoxLayout(slider_container)
+            slider_layout.setContentsMargins(0, 0, 0, 0)
+            
+            type_label = QLabel(f"{vehicle_type.replace('veh_', '').title()}:")
+            type_label.setFont(MaterialTypography.get_font("body_small"))
+            type_label.setMinimumWidth(100)
+            slider_layout.addWidget(type_label)
             
             slider = QSlider(Qt.Horizontal)
             slider.setMinimum(0)
@@ -306,24 +383,37 @@ class MainWindow(QMainWindow):
             self.type_sliders[vehicle_type] = slider
             slider_layout.addWidget(slider)
             
-            label = QLabel(f"{percentage}%")
-            slider_layout.addWidget(label)
-            self.type_sliders[f"{vehicle_type}_label"] = label
+            percentage_label = QLabel(f"{percentage}%")
+            percentage_label.setFont(MaterialTypography.get_font("label_small"))
+            percentage_label.setMinimumWidth(40)
+            slider_layout.addWidget(percentage_label)
+            self.type_sliders[f"{vehicle_type}_label"] = percentage_label
             
-            type_layout.addLayout(slider_layout)
+            type_layout.addWidget(slider_container)
         
-        type_group.setLayout(type_layout)
+        # Remove scrolling - just use the container directly
+        type_group_layout = QVBoxLayout()
+        type_group_layout.addWidget(type_container)
+        type_group.setLayout(type_group_layout)
         layout.addWidget(type_group)
         
-        # Route distribution
+        # Route distribution with Material Design
         route_group = QGroupBox("Route Distribution")
-        route_layout = QVBoxLayout()
-        route_layout.setSpacing(2)
+        MaterialShadow.apply_elevation(route_group, elevation=1)
+        route_container = QWidget()
+        route_layout = QVBoxLayout(route_container)
+        route_layout.setSpacing(8)
         
         self.route_sliders = {}
         for route, weight in self.sim_thread.route_weights.items():
-            slider_layout = QHBoxLayout()
-            slider_layout.addWidget(QLabel(f"{route}:"))
+            route_container_item = QWidget()
+            route_slider_layout = QHBoxLayout(route_container_item)
+            route_slider_layout.setContentsMargins(0, 0, 0, 0)
+            
+            route_label = QLabel(f"{route}:")
+            route_label.setFont(MaterialTypography.get_font("body_small"))
+            route_label.setMinimumWidth(60)
+            route_slider_layout.addWidget(route_label)
             
             slider = QSlider(Qt.Horizontal)
             slider.setMinimum(0)
@@ -331,15 +421,20 @@ class MainWindow(QMainWindow):
             slider.setValue(weight)
             slider.valueChanged.connect(lambda v, r=route: self.update_route_distribution(r, v))
             self.route_sliders[route] = slider
-            slider_layout.addWidget(slider)
+            route_slider_layout.addWidget(slider)
             
-            label = QLabel(f"{weight}%")
-            slider_layout.addWidget(label)
-            self.route_sliders[f"{route}_label"] = label
+            weight_label = QLabel(f"{weight}%")
+            weight_label.setFont(MaterialTypography.get_font("label_small"))
+            weight_label.setMinimumWidth(40)
+            route_slider_layout.addWidget(weight_label)
+            self.route_sliders[f"{route}_label"] = weight_label
             
-            route_layout.addLayout(slider_layout)
+            route_layout.addWidget(route_container_item)
         
-        route_group.setLayout(route_layout)
+        # Remove scrolling - just use the container directly
+        route_group_layout = QVBoxLayout()
+        route_group_layout.addWidget(route_container)
+        route_group.setLayout(route_group_layout)
         layout.addWidget(route_group)
         
         group.setLayout(layout)
@@ -351,93 +446,176 @@ class MainWindow(QMainWindow):
     
     def create_vehicle_panel(self, parent_layout):
         group = QGroupBox("Add Vehicle")
+        MaterialShadow.apply_elevation(group, elevation=1)
         layout = QHBoxLayout()
+        layout.setSpacing(12)
+        layout.setContentsMargins(16, 16, 16, 16)
         
         # Route selection
+        route_container = QWidget()
+        route_layout = QVBoxLayout(route_container)
+        route_layout.setContentsMargins(0, 0, 0, 0)
+        
+        route_label = QLabel("Route:")
+        route_label.setFont(MaterialTypography.get_font("label_medium"))
+        route_layout.addWidget(route_label)
+        
         self.route_combo = QComboBox()
         self.route_combo.addItems([
-            "W_N", "W_E", "W_S",
-            "N_W", "N_E", "N_S",
-            "E_N", "E_S", "E_W",
-            "S_N", "S_E", "S_W"
+            "W_N", "W_E", "W_S", "N_W", "N_E", "N_S",
+            "E_N", "E_S", "E_W", "S_N", "S_E", "S_W"
         ])
-        layout.addWidget(QLabel("Route:"))
-        layout.addWidget(self.route_combo)
+        route_layout.addWidget(self.route_combo)
+        layout.addWidget(route_container)
         
         # Vehicle type selection
+        type_container = QWidget()
+        type_layout = QVBoxLayout(type_container)
+        type_layout.setContentsMargins(0, 0, 0, 0)
+        
+        type_label = QLabel("Type:")
+        type_label.setFont(MaterialTypography.get_font("label_medium"))
+        type_layout.addWidget(type_label)
+        
         self.vehicle_type_combo = QComboBox()
         self.vehicle_type_combo.addItems([
             "veh_passenger", "veh_bus", "veh_truck", "veh_emergency", "veh_motorcycle"
         ])
-        layout.addWidget(QLabel("Type:"))
-        layout.addWidget(self.vehicle_type_combo)
+        type_layout.addWidget(self.vehicle_type_combo)
+        layout.addWidget(type_container)
         
         # Speed input
+        speed_container = QWidget()
+        speed_layout = QVBoxLayout(speed_container)
+        speed_layout.setContentsMargins(0, 0, 0, 0)
+        
+        speed_label = QLabel("Speed:")
+        speed_label.setFont(MaterialTypography.get_font("label_medium"))
+        speed_layout.addWidget(speed_label)
+        
         self.speed_input = QLineEdit("10")
-        layout.addWidget(QLabel("Speed:"))
-        layout.addWidget(self.speed_input)
+        speed_layout.addWidget(self.speed_input)
+        layout.addWidget(speed_container)
         
         # Lane selection
+        lane_container = QWidget()
+        lane_layout = QVBoxLayout(lane_container)
+        lane_layout.setContentsMargins(0, 0, 0, 0)
+        
+        lane_label = QLabel("Lane:")
+        lane_label.setFont(MaterialTypography.get_font("label_medium"))
+        lane_layout.addWidget(lane_label)
+        
         self.lane_combo = QComboBox()
         self.lane_combo.addItems(["random", "0", "1", "2", "3"])
-        layout.addWidget(QLabel("Lane:"))
-        layout.addWidget(self.lane_combo)
+        lane_layout.addWidget(self.lane_combo)
+        layout.addWidget(lane_container)
         
-        # Add vehicle button
+        # Action buttons
+        button_container = QWidget()
+        button_layout = QVBoxLayout(button_container)
+        button_layout.setContentsMargins(0, 0, 0, 0)
+        button_layout.setSpacing(8)
+        
         add_button = QPushButton("Add Vehicle")
+        MaterialUtils.set_button_style(add_button, "primary")
+        add_button.setFont(MaterialTypography.get_font("label_medium"))
         add_button.clicked.connect(self.add_vehicle)
-        layout.addWidget(add_button)
+        button_layout.addWidget(add_button)
         
-        # Add random vehicles button
         random_button = QPushButton("Add 5 Random")
+        MaterialUtils.set_button_style(random_button, "secondary")
+        random_button.setFont(MaterialTypography.get_font("label_medium"))
         random_button.clicked.connect(self.add_random_vehicles)
-        layout.addWidget(random_button)
+        button_layout.addWidget(random_button)
+        
+        layout.addWidget(button_container)
         
         group.setLayout(layout)
         parent_layout.addWidget(group)
     
     def create_vehicle_table(self, parent_layout):
         group = QGroupBox("Active Vehicles")
+        MaterialShadow.apply_elevation(group, elevation=1)
         layout = QVBoxLayout()
+        layout.setContentsMargins(16, 16, 16, 16)
+        layout.setSpacing(12)
         
-        # Create table
+        # Create table with Material Design styling
         self.vehicle_table = QTableWidget()
-        self.vehicle_table.setColumnCount(7)  # Added column for vehicle type
+        self.vehicle_table.setColumnCount(7)
         self.vehicle_table.setHorizontalHeaderLabels(["ID", "Type", "Route", "Road", "Lane", "Speed", "Waiting"])
+        
+        # Apply Material Design styling to table
+        self.vehicle_table.setAlternatingRowColors(True)
+        self.vehicle_table.setSelectionBehavior(QTableWidget.SelectRows)
+        self.vehicle_table.horizontalHeader().setStretchLastSection(True)
         layout.addWidget(self.vehicle_table)
         
-        # Buttons
-        button_layout = QHBoxLayout()
+        # Action buttons with Material Design
+        button_container = QWidget()
+        button_layout = QHBoxLayout(button_container)
+        button_layout.setSpacing(12)
+        button_layout.setContentsMargins(0, 0, 0, 0)
         
         remove_button = QPushButton("Remove Selected")
+        MaterialUtils.set_button_style(remove_button, "secondary")
+        remove_button.setFont(MaterialTypography.get_font("label_medium"))
         remove_button.clicked.connect(self.remove_vehicle)
         button_layout.addWidget(remove_button)
         
         remove_all_button = QPushButton("Remove All")
+        MaterialUtils.set_button_style(remove_all_button, "text")
+        remove_all_button.setFont(MaterialTypography.get_font("label_medium"))
         remove_all_button.clicked.connect(self.remove_all_vehicles)
         button_layout.addWidget(remove_all_button)
         
         highlight_button = QPushButton("Highlight Selected")
+        MaterialUtils.set_button_style(highlight_button, "primary")
+        highlight_button.setFont(MaterialTypography.get_font("label_medium"))
         highlight_button.clicked.connect(self.highlight_vehicle)
         button_layout.addWidget(highlight_button)
         
-        layout.addLayout(button_layout)
+        layout.addWidget(button_container)
         group.setLayout(layout)
         parent_layout.addWidget(group)
     
     def create_statistics_panel(self, parent_layout):
-        # Create main statistics group
+        # Create main statistics group with Material Design
         main_stats_group = QGroupBox("Intersection Statistics")
+        MaterialShadow.apply_elevation(main_stats_group, elevation=1)
         main_stats_layout = QHBoxLayout()
+        main_stats_layout.setSpacing(16)
+        main_stats_layout.setContentsMargins(16, 16, 16, 16)
         
-        # Create statistics for each direction
+        # Create statistics for each direction with Material Design cards
         for direction in ["North", "South", "East", "West"]:
-            direction_layout = QVBoxLayout()
-            direction_layout.addWidget(QLabel(direction))
+            direction_card = QWidget()
+            direction_card.setStyleSheet(f"""
+                QWidget {{
+                    background-color: {MaterialColors.SURFACE_CONTAINER};
+                    border-radius: 8px;
+                    padding: 12px;
+                }}
+            """)
+            MaterialShadow.apply_elevation(direction_card, elevation=1)
             
+            direction_layout = QVBoxLayout(direction_card)
+            direction_layout.setSpacing(8)
+            direction_layout.setContentsMargins(12, 12, 12, 12)
+            
+            # Direction title
+            direction_title = QLabel(direction)
+            MaterialUtils.set_label_style(direction_title, "title")
+            direction_layout.addWidget(direction_title)
+            
+            # Statistics labels
             count_label = QLabel("Count: 0")
+            count_label.setFont(MaterialTypography.get_font("body_medium"))
             queue_label = QLabel("Queue: 0")
+            queue_label.setFont(MaterialTypography.get_font("body_medium"))
             speed_label = QLabel("Speed: 0 m/s")
+            speed_label.setFont(MaterialTypography.get_font("body_medium"))
             
             direction_layout.addWidget(count_label)
             direction_layout.addWidget(queue_label)
@@ -447,46 +625,67 @@ class MainWindow(QMainWindow):
             setattr(self, f"{direction.lower()}_queue", queue_label)
             setattr(self, f"{direction.lower()}_speed", speed_label)
             
-            main_stats_layout.addLayout(direction_layout)
+            main_stats_layout.addWidget(direction_card)
         
-        # Traffic light control
-        light_layout = QVBoxLayout()
-        light_layout.addWidget(QLabel("Traffic Light"))
+        # Traffic light control with Material Design
+        light_card = QWidget()
+        light_card.setStyleSheet(f"""
+            QWidget {{
+                background-color: {MaterialColors.SURFACE_CONTAINER};
+                border-radius: 8px;
+                padding: 12px;
+            }}
+        """)
+        MaterialShadow.apply_elevation(light_card, elevation=1)
+        
+        light_layout = QVBoxLayout(light_card)
+        light_layout.setSpacing(12)
+        light_layout.setContentsMargins(12, 12, 12, 12)
+        
+        light_title = QLabel("Traffic Light")
+        MaterialUtils.set_label_style(light_title, "title")
+        light_layout.addWidget(light_title)
         
         self.light_phase_label = QLabel("Phase: N/A")
+        self.light_phase_label.setFont(MaterialTypography.get_font("body_medium"))
         light_layout.addWidget(self.light_phase_label)
         
         self.manual_control = QCheckBox("Manual Control")
+        self.manual_control.setFont(MaterialTypography.get_font("body_medium"))
         light_layout.addWidget(self.manual_control)
         
         phase_layout = QHBoxLayout()
+        phase_layout.setSpacing(8)
         for i, name in enumerate(["NS", "NSL", "EW", "EWL"]):
             button = QPushButton(name)
+            MaterialUtils.set_button_style(button, "secondary")
+            button.setFont(MaterialTypography.get_font("label_small"))
             button.clicked.connect(lambda checked, i=i: self.set_traffic_light_phase(i*2))
             phase_layout.addWidget(button)
         
         light_layout.addLayout(phase_layout)
-        main_stats_layout.addLayout(light_layout)
+        main_stats_layout.addWidget(light_card)
         
         main_stats_group.setLayout(main_stats_layout)
         parent_layout.addWidget(main_stats_group)
         
-        # Create cumulative statistics group
+        # Create cumulative statistics group with Material Design
         cumulative_stats_group = QGroupBox("Cumulative Statistics")
+        MaterialShadow.apply_elevation(cumulative_stats_group, elevation=1)
         cumulative_stats_layout = QVBoxLayout()
+        cumulative_stats_layout.setContentsMargins(16, 16, 16, 16)
+        cumulative_stats_layout.setSpacing(12)
         
-        # Create statistics table
+        # Create statistics table with Material Design styling
         self.stats_table = QTableWidget()
-        self.stats_table.setColumnCount(14)  # Number of statistics columns
-        self.stats_table.setRowCount(5)  # Global + 4 roads
+        self.stats_table.setColumnCount(14)
+        self.stats_table.setRowCount(5)
         
-        # Set headers with full names
+        # Set headers with Material Design typography
         headers = [
-            "Road",
-            "Current Queue", "Current Wait", "Current Vehicles", "Current Length",
+            "Road", "Current Queue", "Current Wait", "Current Vehicles", "Current Length",
             "Total Queue", "Total Wait", "Total Vehicles", "Total Length",
-            "Max Queue", "Max Wait",
-            "Avg Queue", "Avg Wait", "Avg Length"
+            "Max Queue", "Max Wait", "Avg Queue", "Avg Wait", "Avg Length"
         ]
         self.stats_table.setHorizontalHeaderLabels(headers)
         
@@ -494,26 +693,42 @@ class MainWindow(QMainWindow):
         row_labels = ["Global", "N2TL", "S2TL", "E2TL", "W2TL"]
         self.stats_table.setVerticalHeaderLabels(row_labels)
         
-        # Initialize cells
+        # Initialize cells with Material Design styling
         for row in range(5):
             for col in range(14):
                 item = QTableWidgetItem("0")
                 item.setTextAlignment(Qt.AlignCenter)
+                item.setFont(MaterialTypography.get_font("body_small"))
                 self.stats_table.setItem(row, col, item)
         
-        # Set column widths
+        # Apply Material Design table styling
+        self.stats_table.setAlternatingRowColors(True)
+        self.stats_table.setSelectionBehavior(QTableWidget.SelectRows)
         self.stats_table.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         self.stats_table.verticalHeader().setSectionResizeMode(QHeaderView.ResizeToContents)
         
-        # Add table to layout
+        # Set header fonts
+        header_font = MaterialTypography.get_font("label_medium")
+        self.stats_table.horizontalHeader().setFont(header_font)
+        self.stats_table.verticalHeader().setFont(header_font)
+        
         cumulative_stats_layout.addWidget(self.stats_table)
         
-        # Add legend for units
-        legend_layout = QHBoxLayout()
-        legend_layout.addWidget(QLabel("Units:"))
-        legend_layout.addWidget(QLabel("Queue: vehicles | Wait: seconds | Length: meters"))
-        cumulative_stats_layout.addLayout(legend_layout)
+        # Add legend with Material Design typography
+        legend_container = QWidget()
+        legend_layout = QHBoxLayout(legend_container)
+        legend_layout.setContentsMargins(0, 0, 0, 0)
+        legend_layout.setSpacing(8)
         
+        units_label = QLabel("Units:")
+        units_label.setFont(MaterialTypography.get_font("label_medium"))
+        legend_layout.addWidget(units_label)
+        
+        legend_text = QLabel("Queue: vehicles | Wait: seconds | Length: meters")
+        legend_text.setFont(MaterialTypography.get_font("body_small"))
+        legend_layout.addWidget(legend_text)
+        
+        cumulative_stats_layout.addWidget(legend_container)
         cumulative_stats_group.setLayout(cumulative_stats_layout)
         parent_layout.addWidget(cumulative_stats_group)
     
