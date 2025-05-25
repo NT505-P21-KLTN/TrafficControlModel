@@ -95,7 +95,7 @@ class SyncAgentVisualizer:
         
         # Plot rewards
         axes[1, 1].plot(relative_time, self.metrics['rewards'], 'y-', label='Reward')
-        axes[1, 1].set_title('Global Reward')
+        axes[1, 1].set_title('Reward')
         axes[1, 1].set_xlabel('Time (minutes)')
         axes[1, 1].set_ylabel('Reward Value')
         axes[1, 1].grid(True)

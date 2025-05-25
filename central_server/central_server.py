@@ -15,16 +15,12 @@ from collections import deque
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 from firebase_service import FirebaseService
-from global_reward import GlobalRewardFunction
 
 app = Flask(__name__)
 CORS(app)  # Cho phép truy cập từ Flutter Web
 
 # Initialize Firebase service
 firebase = FirebaseService()
-
-# Initialize global reward function
-global_reward = GlobalRewardFunction()
 
 # Global variables
 active_agents = {}
@@ -680,30 +676,6 @@ def process_all_intersections():
         # Clear processed vehicle transfers
         if 'coordination' in agent_data[agent_id] and 'incoming_vehicles' in agent_data[agent_id]['coordination']:
             agent_data[agent_id]['coordination']['incoming_vehicles'] = []
-
-def calculate_global_rewards():
-    """Calculate global rewards using the GlobalRewardFunction"""
-    # Initialize topology if needed
-    if not hasattr(global_reward, 'initialized'):
-        global_reward.initialize_agent_topology(agent_data)
-        global_reward.initialized = True
-        log_event("Initialized global reward topology")
-    
-    # Calculate global rewards
-    global_rewards = global_reward.calculate_global_reward(agent_data)
-    
-    # Store rewards in Firebase
-    for agent_id, reward in global_rewards.items():
-        try:
-            firebase.update_agent_performance(agent_id, {
-                'reward': reward,
-                'queue_length': agent_data[agent_id]['performance']['queue_length'] if 'performance' in agent_data[agent_id] else 0,
-                'waiting_time': agent_data[agent_id]['performance']['waiting_time'] if 'performance' in agent_data[agent_id] else 0
-            })
-        except Exception as e:
-            log_event(f"Error updating Firebase with global reward for {agent_id}: {str(e)}")
-    
-    return global_rewards
 
 def get_all_agent_states():
     """Retrieve states from all agents"""
