@@ -2,7 +2,7 @@ from PyQt5.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                             QHBoxLayout, QPushButton, QLabel, QComboBox, 
                             QLineEdit, QTableWidget, QTableWidgetItem, QGroupBox,
                             QCheckBox, QSlider, QSpinBox, QRadioButton, QFrame, QHeaderView,
-                            QSplitter, QMessageBox, QScrollArea)
+                            QSplitter, QMessageBox, QScrollArea, QSizePolicy)
 from PyQt5.QtCore import Qt, QThread, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont, QIcon
 from add_vehicle import SimulationThread
@@ -60,23 +60,25 @@ class MainWindow(QMainWindow):
         # Add toggle button for auto spawn controls
         toggle_button = QPushButton("Hide Auto Spawn Controls")
         toggle_button.clicked.connect(self.toggle_auto_spawn_panel)
-        toggle_button.setStyleSheet("QPushButton { padding: 12px 24px; }")  # Add padding to all sides
-        left_layout.addWidget(toggle_button)
+        toggle_button.setStyleSheet("QPushButton { padding: 12px 24px; }")
+        # Add space above and below the button, and also left/right using a container with margins
+        toggle_button_container = QWidget()
+        toggle_button_layout = QHBoxLayout(toggle_button_container)
+        toggle_button_layout.setContentsMargins(24, 16, 16, 16)  # left, top, right, bottom
+        toggle_button_layout.addWidget(toggle_button)
+        left_layout.addWidget(toggle_button_container)
         
         # Create auto spawn controls container
         self.auto_spawn_container = QWidget()
         auto_spawn_layout = QVBoxLayout(self.auto_spawn_container)
         self.create_auto_spawn_panel(auto_spawn_layout)
-        left_layout.addWidget(self.auto_spawn_container)
-        
+
         # Create plot for average statistics
         plot_group = QGroupBox("Road Statistics Plots")
         plot_layout = QVBoxLayout()
-        
         # Create matplotlib figure with 4 subplots in a column
         self.figure = Figure(figsize=(8, 12))  # Taller figure for vertical layout
         self.canvas = FigureCanvas(self.figure)
-        
         # Create 4 subplots in a column
         self.axes = {
             'N2TL': self.figure.add_subplot(411),  # Changed to 4x1 layout
@@ -84,7 +86,6 @@ class MainWindow(QMainWindow):
             'E2TL': self.figure.add_subplot(413),
             'W2TL': self.figure.add_subplot(414)
         }
-        
         # Initialize plot data for each road
         self.plot_data = {
             'steps': [],
@@ -93,7 +94,6 @@ class MainWindow(QMainWindow):
             'E2TL': {'queue': [], 'wait': [], 'length': []},
             'W2TL': {'queue': [], 'wait': [], 'length': []}
         }
-        
         # Set up plots
         for road, ax in self.axes.items():
             ax.set_title(f'{road} Statistics')
@@ -101,20 +101,24 @@ class MainWindow(QMainWindow):
             ax.set_ylabel('Value')
             ax.grid(True)
             ax.legend(['Queue', 'Wait Time', 'Queue Length'])
-        
         # Adjust layout to prevent overlap
         self.figure.tight_layout(pad=3.0)
-        
         # Add canvas to layout
         plot_layout.addWidget(self.canvas)
         plot_group.setLayout(plot_layout)
-        left_layout.addWidget(plot_group)
+
+        left_splitter = QSplitter(Qt.Vertical)
+        left_splitter.addWidget(self.auto_spawn_container)
+        left_splitter.addWidget(plot_group)
+        left_splitter.setSizes([400, 400])  # Adjust as needed
+
+        left_layout.addWidget(toggle_button_container)
+        left_layout.addWidget(left_splitter)
         
         # Make left panel scrollable
         left_scroll = QScrollArea()
         left_scroll.setWidgetResizable(True)
         left_scroll.setWidget(self.left_panel)
-        left_scroll.setStyleSheet(f"QScrollArea {{ background: transparent; border: none; }}")
         splitter.addWidget(left_scroll)
 
         # Create right panel for other controls
@@ -130,7 +134,6 @@ class MainWindow(QMainWindow):
         right_scroll = QScrollArea()
         right_scroll.setWidgetResizable(True)
         right_scroll.setWidget(self.right_panel)
-        right_scroll.setStyleSheet(f"QScrollArea {{ background: transparent; border: none; }}")
         splitter.addWidget(right_scroll)
         
         # Set initial sizes (40% left, 60% right)
@@ -363,9 +366,6 @@ class MainWindow(QMainWindow):
         
         layout.addWidget(basic_container)
         
-        # In the create_auto_spawn_panel method, modify the vehicle type distribution section:
-# Around line 225-262
-
         # Vehicle type distribution with Material Design
         type_group = QGroupBox("Vehicle Type Distribution")
         MaterialShadow.apply_elevation(type_group, elevation=1)
@@ -393,7 +393,7 @@ class MainWindow(QMainWindow):
             slider_layout.addWidget(slider)
             
             percentage_label = QLabel(f"{percentage}%")
-            percentage_label.setFont(MaterialTypography.get_font("label_small"))
+            percentage_label.setFont(MaterialTypography.get_font("body_small"))
             percentage_label.setMinimumWidth(40)
             slider_layout.addWidget(percentage_label)
             self.type_sliders[f"{vehicle_type}_label"] = percentage_label
@@ -433,7 +433,7 @@ class MainWindow(QMainWindow):
             route_slider_layout.addWidget(slider)
             
             weight_label = QLabel(f"{weight}%")
-            weight_label.setFont(MaterialTypography.get_font("label_small"))
+            weight_label.setFont(MaterialTypography.get_font("body_small"))
             weight_label.setMinimumWidth(40)
             route_slider_layout.addWidget(weight_label)
             self.route_sliders[f"{route}_label"] = weight_label
@@ -689,7 +689,12 @@ class MainWindow(QMainWindow):
         self.stats_table = QTableWidget()
         self.stats_table.setColumnCount(14)
         self.stats_table.setRowCount(5)
-        
+
+        # Make the table expand and remove its scrollbars
+        self.stats_table.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Fixed)
+        self.stats_table.setVerticalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        self.stats_table.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+
         # Set headers with Material Design typography
         headers = [
             "Road", "Current Queue", "Current Wait", "Current Vehicles", "Current Length",
@@ -721,6 +726,15 @@ class MainWindow(QMainWindow):
         self.stats_table.horizontalHeader().setFont(header_font)
         self.stats_table.verticalHeader().setFont(header_font)
         
+        # Resize rows and columns to fit contents
+        self.stats_table.resizeRowsToContents()
+        self.stats_table.resizeColumnsToContents()
+
+        # Set minimum height to fit all rows (5 rows + header)
+        row_height = self.stats_table.verticalHeader().sectionSize(0)
+        header_height = self.stats_table.horizontalHeader().height()
+        self.stats_table.setMinimumHeight(400)  # 8 for padding
+
         cumulative_stats_layout.addWidget(self.stats_table)
         
         # Add legend with Material Design typography
