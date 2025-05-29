@@ -336,10 +336,8 @@ class InteractiveSimulation(QObject):
                     self.stats_updated.emit(self.get_statistics())
                     self.cumulative_stats_updated.emit(self.get_cumulative_statistics())
 
-                    # Only track vehicles and handle incoming vehicles if auto_spawn is enabled
-                    if self.auto_spawn:
-                        self._track_vehicles()
-                        self._check_incoming_vehicles()
+                    self._track_vehicles()
+                    self._check_incoming_vehicles()
 
                     # Update server with state and get new sync timing
                     if self._server_url:
@@ -705,8 +703,6 @@ class InteractiveSimulation(QObject):
             return
         if not self._server_url:
             return
-        if not self.auto_spawn:
-            return
 
         try:
             # Get vehicle transfers from the server
@@ -791,12 +787,13 @@ class InteractiveSimulation(QObject):
                 try:
                     # Create route for the vehicle
                     route_id = f"route_{vehicle_data['vehicle_id']}"
+                    
+                    # Determine the route edges based on the original route and entry road
                     route_edges = [vehicle_data['spawn_road']]
                     
                     # Add destination edge based on original route
                     if 'route' in vehicle_data:
                         route_parts = vehicle_data['route'].split('_')
-                        
                         if len(route_parts) >= 2:
                             # Map the route parts to actual edge names
                             from_dir = route_parts[0]
@@ -813,15 +810,10 @@ class InteractiveSimulation(QObject):
                             # Add the destination edge if it exists in our map
                             if to_dir in edge_map:
                                 route_edges.append(edge_map[to_dir])
+                                print(f"Created route {route_id} with edges: {route_edges}")
                     
                     # Add the route
                     traci.route.add(route_id, route_edges)
-                    
-                    # Set spawn position if available
-                    depart_pos = "0"
-                    if vehicle_data.get('spawn_position'):
-                        # Convert position to distance from start of road
-                        depart_pos = "0"
                     
                     # Spawn the vehicle
                     traci.vehicle.add(
@@ -830,9 +822,9 @@ class InteractiveSimulation(QObject):
                         typeID=vehicle_data['type'],
                         departLane=str(vehicle_data['spawn_lane']),
                         departSpeed=str(vehicle_data['speed']),
-                        departPos=depart_pos
+                        departPos="0"
                     )
-                    print(f"Spawned vehicle {vehicle_data['vehicle_id']} on {vehicle_data['spawn_road']}")
+                    print(f"Spawned vehicle {vehicle_data['vehicle_id']} on {vehicle_data['spawn_road']} with route {route_id}")
                     
                 except Exception as e:
                     print(f"Error spawning vehicle: {e}")
@@ -860,12 +852,6 @@ class InteractiveSimulation(QObject):
                 steps_todo -= 1
                 queue_length = self._get_queue_length()
                 self._queue_length_episode.append(queue_length)
-                
-                # Only handle vehicle tracking and spawning if auto_spawn is enabled
-                if self.auto_spawn:
-                    # Track vehicles and handle incoming vehicles
-                    self._track_vehicles()
-                    self._check_incoming_vehicles()
                 
                 # Emit step update signal
                 self.step_updated.emit(self._step)
