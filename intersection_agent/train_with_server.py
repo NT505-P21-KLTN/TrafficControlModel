@@ -95,8 +95,8 @@ if __name__ == "__main__":
     # Parse command line arguments to specify config file
     import argparse
     parser = argparse.ArgumentParser(description='Train traffic light control agent with server connection')
-    parser.add_argument('--server-config', type=str, default='server_config.ini',
-                       help='Path to the server configuration file (default: server_config.ini)')
+    parser.add_argument('--server-config', type=str, default='server_config_1.ini',
+                       help='Path to the server configuration file (default: server_config_1.ini)')
     parser.add_argument('--base-model-path', type=str, default='models/trained_model_base.h5',
                        help='Path to the base model to load (optional)')
     args = parser.parse_args()

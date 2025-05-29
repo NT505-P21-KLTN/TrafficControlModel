@@ -1,5 +1,5 @@
 from flask import Flask, request, jsonify, render_template, send_from_directory
-from flask_cors import CORS 
+from flask_cors import CORS
 import json
 import os
 import time
@@ -15,16 +15,12 @@ from collections import deque
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
 from firebase_service import FirebaseService
-from global_reward import GlobalRewardFunction
 
 app = Flask(__name__)
 CORS(app)  # Cho phép truy cập từ Flutter Web
 
 # Initialize Firebase service
 firebase = FirebaseService()
-
-# Initialize global reward function
-global_reward = GlobalRewardFunction()
 
 # Global variables
 active_agents = {}
@@ -59,16 +55,16 @@ def generate_intersection_map():
     """Generate a map showing all connected intersections with their network structure"""
     # Default center coordinates
     default_center = [10.777807, 106.681676]
-    
+
     # Create a map centered on the specified location
     m = folium.Map(location=default_center, zoom_start=15)
-    
+
     # Create a marker cluster for better visualization
     marker_cluster = MarkerCluster().add_to(m)
-    
+
     # Track intersections with valid location data
     valid_intersections = {}
-    
+
     # Add markers for each agent with location data
     has_markers = False
     for agent_id, data in agent_data.items():
@@ -80,17 +76,17 @@ def generate_intersection_map():
                     lat = float(location['latitude'])
                     lng = float(location['longitude'])
                     name = location.get('intersection_name', f'Intersection {agent_id}')
-                    
+
                     # Determine agent status (online/offline)
                     is_online = agent_id in last_update and (time.time() - last_update[agent_id] <= TIMEOUT_THRESHOLD)
                     color = 'green' if is_online else 'red'
-                    
+
                     # Get performance data if available
                     queue_info = ""
                     if 'queue_lengths' in data and len(data['queue_lengths']) > 0:
                         avg_queue = sum(data['queue_lengths'][-10:]) / min(10, len(data['queue_lengths']))
                         queue_info = f"<br>Average queue: {avg_queue:.2f} vehicles"
-                    
+
                     # Create popup content with more detailed information
                     popup_content = f"""
                     <div style="width: 200px;">
@@ -100,7 +96,7 @@ def generate_intersection_map():
                         <b>Location:</b> {lat:.6f}, {lng:.6f}
                     </div>
                     """
-                    
+
                     # Add marker to the cluster
                     folium.Marker(
                         location=[lat, lng],
@@ -108,7 +104,7 @@ def generate_intersection_map():
                         tooltip=name,
                         icon=folium.Icon(color=color, icon='traffic-light', prefix='fa')
                     ).add_to(marker_cluster)
-                    
+
                     # Store the intersection for connection drawing
                     valid_intersections[agent_id] = {
                         'lat': lat,
@@ -116,12 +112,12 @@ def generate_intersection_map():
                         'environment': data['topology'].get('environment', {}) if 'topology' in data else {},
                         'connected_to': data.get('connected_to', [])  # Get explicit connections
                     }
-                    
+
                     has_markers = True
-                    
+
                 except (ValueError, TypeError) as e:
                     print(f"Error processing location for agent {agent_id}: {e}")
-    
+
     # Draw connections between intersections based on explicit connections
     connections_drawn = set()
     for id1, info1 in valid_intersections.items():
@@ -129,16 +125,16 @@ def generate_intersection_map():
         connected_to = info1.get('connected_to', [])
         if isinstance(connected_to, str):
             connected_to = [x.strip() for x in connected_to.split(',')]
-            
+
         for id2 in connected_to:
             if id2 in valid_intersections and (id1, id2) not in connections_drawn and (id2, id1) not in connections_drawn:
                 info2 = valid_intersections[id2]
                 # Calculate distance for tooltip
                 distance_km = haversine_distance(
-                    (info1['lat'], info1['lng']), 
+                    (info1['lat'], info1['lng']),
                     (info2['lat'], info2['lng'])
                 )
-                
+
                 folium.PolyLine(
                     locations=[(info1['lat'], info1['lng']), (info2['lat'], info2['lng'])],
                     color='blue',
@@ -147,7 +143,7 @@ def generate_intersection_map():
                     tooltip=f"Distance: {distance_km:.2f} km"
                 ).add_to(m)
                 connections_drawn.add((id1, id2))
-    
+
     # If no valid markers were added, add a default one
     if not has_markers:
         folium.Marker(
@@ -156,11 +152,11 @@ def generate_intersection_map():
             tooltip="Default Location",
             icon=folium.Icon(color='blue', icon='info-sign')
         ).add_to(m)
-    
+
     # Save to static directory for serving
     map_path = 'static/intersection_map.html'
     m.save(map_path)
-    
+
     # Also save as template
     with open('templates/map.html', 'w', encoding='utf-8') as f:  # Add encoding='utf-8'
         f.write('''
@@ -218,17 +214,17 @@ def generate_intersection_map():
 </body>
 </html>
         ''')
-    
+
     return map_path
 
 def haversine_distance(point1, point2):
     """Calculate the great-circle distance between two points in kilometers"""
     lat1, lon1 = point1
     lat2, lon2 = point2
-    
+
     # Convert latitude and longitude to radians
     lat1, lon1, lat2, lon2 = map(math.radians, [lat1, lon1, lat2, lon2])
-    
+
     # Haversine formula
     dlat = lat2 - lat1
     dlon = lon2 - lon1
@@ -242,10 +238,10 @@ def calculate_intersection_sync_times():
     if not agent_data:
         log_event("No agent data available for calculating sync times")
         return {}
-    
+
     sync_times = {}
     intersections_with_locations = {}
-    
+
     # First, collect all intersections with valid location data
     for agent_id, data in agent_data.items():
         if 'topology' in data and 'location' in data['topology']:
@@ -257,7 +253,7 @@ def calculate_intersection_sync_times():
                     intersections_with_locations[agent_id] = (lat, lng)
                 except (ValueError, TypeError):
                     log_event(f"Invalid location format for agent {agent_id}")
-    
+
     # For each pair of intersections, calculate sync time
     for id1, loc1 in intersections_with_locations.items():
         sync_times[id1] = {}
@@ -265,10 +261,10 @@ def calculate_intersection_sync_times():
             if id1 != id2:
                 # Calculate distance between intersections
                 distance_km = haversine_distance(loc1, loc2)
-                
+
                 # Calculate travel time based on average speed (assuming 40 km/h)
                 avg_speed_kmh = 40.0
-                
+
                 # Get actual speed if available in agent data
                 if id1 in agent_data and 'states' in agent_data[id1]:
                     states = agent_data[id1]['states']
@@ -277,10 +273,10 @@ def calculate_intersection_sync_times():
                         # Convert m/s to km/h and average all directions
                         if speeds:
                             avg_speed_kmh = sum(speeds.values()) * 3.6 / len(speeds)
-                
+
                 # Calculate travel time in seconds
                 travel_time_sec = (distance_km / avg_speed_kmh) * 3600
-                
+
                 # Calculate optimal offset based on travel time (green wave)
                 # This is a simple calculation - in real systems it would be more complex
                 cycle_time = 0
@@ -288,14 +284,14 @@ def calculate_intersection_sync_times():
                     green_duration = agent_data[id1]['config'].get('green_duration', 0)
                     yellow_duration = agent_data[id1]['config'].get('yellow_duration', 0)
                     cycle_time = (green_duration + yellow_duration) * 2  # Simplified cycle time calculation
-                
+
                 # Default cycle time if not available
                 if cycle_time == 0:
                     cycle_time = 38  # Typical cycle time as fallback
-                
+
                 # Calculate optimal offset (modulo the cycle time)
                 optimal_offset = travel_time_sec % cycle_time
-                
+
                 # Store the sync data
                 sync_times[id1][id2] = {
                     "distance_km": round(distance_km, 2),
@@ -303,18 +299,18 @@ def calculate_intersection_sync_times():
                     "optimal_offset_sec": round(optimal_offset, 2),
                     "cycle_time_sec": cycle_time
                 }
-    
+
     # Save the sync times to a file for reference
     with open('server_data/sync_times.json', 'w') as f:
         json.dump(sync_times, f, indent=2)
-    
+
     log_event(f"Calculated sync times between {len(intersections_with_locations)} intersections")
     for id1, targets in sync_times.items():
         for id2, sync_data in targets.items():
             log_event(f"  {id1} → {id2}: Distance={sync_data['distance_km']}km, "
-                      
-                     f"Travel Time={sync_data['travel_time_sec']}s, " +
-                     f"Optimal Offset={sync_data['optimal_offset_sec']}s")
+
+                      f"Travel Time={sync_data['travel_time_sec']}s, " +
+                      f"Optimal Offset={sync_data['optimal_offset_sec']}s")
     return sync_times
 
 def save_data_periodically():
@@ -323,13 +319,13 @@ def save_data_periodically():
         # Save current data
         with open('server_data/agent_data.json', 'w') as f:
             json.dump(agent_data, f)
-        
+
         # Check for disconnected agents
         current_time = time.time()
         for agent_id, last_time in list(last_update.items()):
             if current_time - last_time > TIMEOUT_THRESHOLD:
                 log_event(f"WARNING: Agent {agent_id} appears to be offline")
-        
+
         # Generate visualizations if data exists
         if agent_data:
             try:
@@ -338,19 +334,19 @@ def save_data_periodically():
                 log_event("Generated updated charts and map")
             except Exception as e:
                 log_event(f"ERROR generating visualizations: {e}")
-                
+
         time.sleep(30)  # Update every 30 seconds
 
 def generate_comparison_charts():
     """Generate comparison charts from collected agent data"""
     if not agent_data:
         return
-    
+
     # Prepare data for plotting
     agents = list(agent_data.keys())
     rewards = {agent: data.get('rewards', []) for agent, data in agent_data.items() if 'rewards' in data}
     queue_lengths = {agent: data.get('queue_lengths', []) for agent, data in agent_data.items() if 'queue_lengths' in data}
-    
+
     # Only plot if we have data
     if rewards and any(len(r) > 0 for r in rewards.values()):
         # Plot rewards
@@ -365,7 +361,7 @@ def generate_comparison_charts():
         plt.savefig(f'server_data/figures/rewards_comparison.png')
         plt.savefig(f'static/rewards_comparison.png')
         plt.close()
-    
+
     # Plot queue lengths if available
     if queue_lengths and any(len(q) > 0 for q in queue_lengths.values()):
         plt.figure(figsize=(12, 6))
@@ -416,14 +412,14 @@ def get_agent_coordination(agent_id):
     try:
         # Get coordination data from memory
         coordination_data = retrieve_coordination_data(agent_id)
-        
+
         # Get vehicle transfers from file
         vehicle_transfers = get_vehicle_transfers(agent_id)
-        
+
         # Combine the data
         if coordination_data:
             coordination_data['vehicle_transfers'] = vehicle_transfers
-        
+
         return jsonify(coordination_data or {})
     except Exception as e:
         log_event(f"ERROR getting coordination data for agent {agent_id}: {str(e)}")
@@ -492,8 +488,8 @@ def update_system_status():
         agents = firebase.get_all_agents()
         if agents:
             total_agents = len(agents)
-            online_agents = sum(1 for agent in agents.values() 
-                              if agent.get('status') == 'online')
+            online_agents = sum(1 for agent in agents.values()
+                                if agent.get('status') == 'online')
             firebase.update_system_status(total_agents, online_agents)
         time.sleep(5)
 
@@ -513,7 +509,7 @@ def reset_server_data():
     global agent_data, last_update
     agent_data = {}
     last_update = {}
-    
+
     print("Server data has been reset")
     return jsonify({'status': 'success', 'message': 'Server data has been reset'}), 200
 
@@ -534,14 +530,14 @@ def receive_updates():
         data = request.json
         log_event(f"Received update from agent: {data['agent_id']}")
         agent_id = data.get('agent_id')
-        
+
         if not agent_id:
             log_event("ERROR: Received update without agent_id")
             return jsonify({'status': 'error', 'message': 'Missing agent_id'}), 400
-        
+
         # Store the update time
         last_update[agent_id] = time.time()
-        
+
         # Initialize agent data if it doesn't exist
         if agent_id not in agent_data:
             agent_data[agent_id] = {
@@ -553,12 +549,12 @@ def receive_updates():
                 'last_episode': -1
             }
             log_event(f"New agent registered: {agent_id}")
-        
+
         # Handle vehicle transfers
         if 'vehicle_transfer' in data:
             transfer_data = data['vehicle_transfer']
             log_event(f"Received vehicle transfer: {transfer_data['vehicle_id']} from {transfer_data['from_agent']} to {transfer_data['to_agent']}")
-            
+
             # Store the transfer data in the destination agent's coordination data
             to_agent = transfer_data['to_agent']
             if to_agent not in agent_data:
@@ -567,7 +563,7 @@ def receive_updates():
                 agent_data[to_agent]['coordination'] = {'incoming_vehicles': []}
             elif 'incoming_vehicles' not in agent_data[to_agent]['coordination']:
                 agent_data[to_agent]['coordination']['incoming_vehicles'] = []
-            
+
             # Add the vehicle to the destination agent's incoming vehicles
             agent_data[to_agent]['coordination']['incoming_vehicles'].append(transfer_data)
             log_event(f"Added vehicle {transfer_data['vehicle_id']} to {to_agent}'s incoming vehicles")
@@ -575,7 +571,7 @@ def receive_updates():
         # Handle states data
         if 'states' in data:
             store_agent_states(agent_id, data['states'])
-        
+
         # Handle one-time topology data
         if 'topology' in data and 'topology' not in agent_data[agent_id]:
             agent_data[agent_id]['topology'] = data['topology']
@@ -583,17 +579,17 @@ def receive_updates():
                 generate_intersection_map()
             except Exception as e:
                 log_event(f"Error generating map: {e}")
-        
+
         # ACCUMULATE metrics data rather than replacing
         if 'rewards' in data and data['rewards']:
             agent_data[agent_id].setdefault('rewards', []).extend(data['rewards'])
-            
+
         if 'queue_lengths' in data and data['queue_lengths']:
             agent_data[agent_id].setdefault('queue_lengths', []).extend(data['queue_lengths'])
-            
+
         if 'waiting_times' in data and data['waiting_times']:
             agent_data[agent_id].setdefault('waiting_times', []).extend(data['waiting_times'])
-        
+
         # Update scalar values
         if 'status' in data:
             agent_data[agent_id]['status'] = data['status']
@@ -601,25 +597,25 @@ def receive_updates():
             agent_data[agent_id]['online'] = data['status'] != 'terminated'
             # Update status in Firebase
             firebase.update_agent_status(agent_id, data['status'])
-        
+
         # Update system status
         firebase.update_system_status(len(agent_data), sum(1 for agent in agent_data.values() if agent.get('online', False)))
-        
+
         return jsonify({'status': 'success'})
     except Exception as e:
         log_event(f"ERROR in receive_updates: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
-    
+
 coordination_storage = {}  # Simple in-memory storage for coordination data
 
 def store_agent_states(agent_id, states):
     """Store state data received from an agent"""
     if agent_id not in agent_data:
         agent_data[agent_id] = {}
-    
+
     agent_data[agent_id]['states'] = states
     log_event(f"Stored {len(states)} states from agent {agent_id}")
-    
+
     # Trigger coordination processing when new states arrive
     process_all_intersections()
 
@@ -635,11 +631,11 @@ def store_coordination_data(agent_id, data):
     """Store coordination data for sync agent"""
     if agent_id not in coordination_storage:
         coordination_storage[agent_id] = []
-    
+
     # Keep only last 100 entries
     if len(coordination_storage[agent_id]) >= 100:
         coordination_storage[agent_id].pop(0)
-    
+
     coordination_storage[agent_id].append(data)
 
 def retrieve_coordination_data(agent_id):
@@ -654,18 +650,18 @@ def process_all_intersections():
     for agent_id, data in agent_data.items():
         if 'states' in data and data['states']:
             all_states[agent_id] = data['states']
-    
+
     # Store states for sync agent to use
     for agent_id, states in all_states.items():
         if not states:
             continue
-            
+
         latest_state = states[-1]  # Get most recent state
         traffic_data = latest_state.get('traffic_data', {})
-        
+
         # Get vehicle statistics
         vehicle_stats = agent_data[agent_id].get('vehicle_stats', {})
-        
+
         # Store basic traffic data
         store_coordination_data(agent_id, {
             'timestamp': time.time(),
@@ -676,34 +672,10 @@ def process_all_intersections():
             'vehicle_transfers': agent_data[agent_id].get('coordination', {}).get('incoming_vehicles', []),
             'vehicle_stats': vehicle_stats
         })
-        
+
         # Clear processed vehicle transfers
         if 'coordination' in agent_data[agent_id] and 'incoming_vehicles' in agent_data[agent_id]['coordination']:
             agent_data[agent_id]['coordination']['incoming_vehicles'] = []
-
-def calculate_global_rewards():
-    """Calculate global rewards using the GlobalRewardFunction"""
-    # Initialize topology if needed
-    if not hasattr(global_reward, 'initialized'):
-        global_reward.initialize_agent_topology(agent_data)
-        global_reward.initialized = True
-        log_event("Initialized global reward topology")
-    
-    # Calculate global rewards
-    global_rewards = global_reward.calculate_global_reward(agent_data)
-    
-    # Store rewards in Firebase
-    for agent_id, reward in global_rewards.items():
-        try:
-            firebase.update_agent_performance(agent_id, {
-                'reward': reward,
-                'queue_length': agent_data[agent_id]['performance']['queue_length'] if 'performance' in agent_data[agent_id] else 0,
-                'waiting_time': agent_data[agent_id]['performance']['waiting_time'] if 'performance' in agent_data[agent_id] else 0
-            })
-        except Exception as e:
-            log_event(f"Error updating Firebase with global reward for {agent_id}: {str(e)}")
-    
-    return global_rewards
 
 def get_all_agent_states():
     """Retrieve states from all agents"""
@@ -732,12 +704,12 @@ def calculate_travel_times(topology):
 def get_drl_optimized_sync_times():
     """Get DRL-optimized synchronization times if available"""
     sync_file = 'server_data/sync_times.json'
-    
+
     try:
         if os.path.exists(sync_file):
             with open(sync_file, 'r') as f:
                 sync_times = json.load(f)
-            
+
             # Check if this has DRL optimization flag
             has_drl = False
             for id1, targets in sync_times.items():
@@ -747,13 +719,13 @@ def get_drl_optimized_sync_times():
                         break
                 if has_drl:
                     break
-            
+
             if has_drl:
                 log_event("Using DRL-optimized synchronization times")
                 return sync_times
     except Exception as e:
         log_event(f"Error loading DRL sync times: {e}")
-    
+
     # If not available or error, calculate them
     return calculate_intersection_sync_times()
 
@@ -778,7 +750,7 @@ def store_vehicle_transfer(transfer_data):
         # Create directory if it doesn't exist
         os.makedirs(os.path.dirname(VEHICLE_TRANSFER_FILE), exist_ok=True)
         log_event(f"Ensuring directory exists: {os.path.dirname(VEHICLE_TRANSFER_FILE)}")
-        
+
         # Load existing data
         existing_data = []
         if os.path.exists(VEHICLE_TRANSFER_FILE):
@@ -791,13 +763,13 @@ def store_vehicle_transfer(transfer_data):
                 existing_data = []
         else:
             log_event(f"Vehicle transfer file not found, creating new file at {VEHICLE_TRANSFER_FILE}")
-        
+
         # Add timestamp to transfer data
         transfer_data['stored_at'] = datetime.now().isoformat()
-        
+
         # Append new transfer data
         existing_data.append(transfer_data)
-        
+
         # Save updated data
         try:
             with open(VEHICLE_TRANSFER_FILE, 'w') as f:
@@ -807,7 +779,7 @@ def store_vehicle_transfer(transfer_data):
         except Exception as e:
             log_event(f"Error writing to vehicle transfer file: {str(e)}")
             return False
-            
+
     except Exception as e:
         log_event(f"ERROR storing vehicle transfer data: {str(e)}")
         return False
@@ -818,15 +790,15 @@ def get_vehicle_transfers(to_agent=None):
         if not os.path.exists(VEHICLE_TRANSFER_FILE):
             log_event(f"Vehicle transfer file not found at {VEHICLE_TRANSFER_FILE}, returning empty list")
             return []
-            
+
         with open(VEHICLE_TRANSFER_FILE, 'r') as f:
             transfers = json.load(f)
             log_event(f"Successfully loaded {len(transfers)} vehicle transfers from {VEHICLE_TRANSFER_FILE}")
-            
+
         if to_agent:
             transfers = [t for t in transfers if t.get('to_agent') == to_agent]
             log_event(f"Filtered to {len(transfers)} transfers for agent {to_agent}")
-            
+
         return transfers
     except Exception as e:
         log_event(f"ERROR getting vehicle transfers: {str(e)}")
@@ -837,19 +809,19 @@ def get_vehicle_transfers():
     """Get all vehicle transfers or filter by agent"""
     try:
         agent_id = request.args.get('agent_id')
-        
+
         if not os.path.exists(VEHICLE_TRANSFER_FILE):
             return jsonify([])
-            
+
         with open(VEHICLE_TRANSFER_FILE, 'r') as f:
             all_transfers = json.load(f)
-            
+
         if agent_id:
             # Filter transfers for the specific agent
             transfers = [t for t in all_transfers if t.get('to_agent') == agent_id]
         else:
             transfers = all_transfers
-            
+
         return jsonify(transfers)
     except Exception as e:
         log_event(f"ERROR getting vehicle transfers: {str(e)}")
@@ -862,15 +834,15 @@ def receive_vehicle_transfer():
         transfer_data = request.json
         if not transfer_data or not isinstance(transfer_data, dict):
             return jsonify({'status': 'error', 'message': 'Invalid transfer data format'}), 400
-            
+
         required_fields = ['vehicle_id', 'from_agent', 'to_agent', 'type', 'speed', 'waiting_time']
         missing_fields = [field for field in required_fields if field not in transfer_data]
         if missing_fields:
             return jsonify({'status': 'error', 'message': f'Missing required fields: {", ".join(missing_fields)}'}), 400
-            
+
         log_event(f"Received vehicle transfer: {transfer_data['vehicle_id']} from {transfer_data['from_agent']} to {transfer_data['to_agent']}")
         log_event(f"Vehicle details: type={transfer_data['type']}, speed={transfer_data['speed']:.2f}, waiting_time={transfer_data['waiting_time']:.2f}")
-        
+
         # Store the transfer data in the file
         if store_vehicle_transfer(transfer_data):
             # Also store in memory for immediate access
@@ -881,15 +853,15 @@ def receive_vehicle_transfer():
                 agent_data[to_agent]['coordination'] = {'incoming_vehicles': []}
             elif 'incoming_vehicles' not in agent_data[to_agent]['coordination']:
                 agent_data[to_agent]['coordination']['incoming_vehicles'] = []
-            
+
             # Add the vehicle to the destination agent's incoming vehicles
             agent_data[to_agent]['coordination']['incoming_vehicles'].append(transfer_data)
             log_event(f"Added vehicle {transfer_data['vehicle_id']} to {to_agent}'s incoming vehicles")
-            
+
             return jsonify({'status': 'success'})
         else:
             return jsonify({'status': 'error', 'message': 'Failed to store vehicle transfer data'}), 500
-            
+
     except Exception as e:
         log_event(f"ERROR in receive_vehicle_transfer: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
@@ -900,14 +872,14 @@ def delete_vehicle_transfer(vehicle_id):
         if not os.path.exists(VEHICLE_TRANSFER_FILE):
             log_event(f"Vehicle transfer file not found at {VEHICLE_TRANSFER_FILE}")
             return False
-            
+
         with open(VEHICLE_TRANSFER_FILE, 'r') as f:
             transfers = json.load(f)
-            
+
         # Find and remove the transfer data for the specified vehicle
         original_length = len(transfers)
         transfers = [t for t in transfers if t.get('vehicle_id') != vehicle_id]
-        
+
         if len(transfers) < original_length:
             # Save the updated data
             with open(VEHICLE_TRANSFER_FILE, 'w') as f:
@@ -917,7 +889,7 @@ def delete_vehicle_transfer(vehicle_id):
         else:
             log_event(f"No transfer data found for vehicle {vehicle_id}")
             return False
-            
+
     except Exception as e:
         log_event(f"ERROR deleting vehicle transfer data: {str(e)}")
         return False
@@ -1666,15 +1638,15 @@ function getStatusBadge(status) {
         print("Generated initial map")
     except Exception as e:
         print(f"Error generating initial map: {e}")
-    
+
     # Start the background thread for saving data
     bg_thread = threading.Thread(target=save_data_periodically, daemon=True)
     bg_thread.start()
-    
+
     # Start system status update thread
     status_thread = threading.Thread(target=update_system_status)
     status_thread.daemon = True
     status_thread.start()
-    
+
     # Run the server
     app.run(host='0.0.0.0', port=5000, debug=False)

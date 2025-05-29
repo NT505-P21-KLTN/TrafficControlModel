@@ -77,11 +77,11 @@ class FirebaseService:
         """Save data to JSON file"""
         try:
             filepath = os.path.join(self.data_dir, filename)
-            print(f"\nSaving to file: {filepath}")
-            print(f"Data to save: {json.dumps(data, indent=2)}")
+            # print(f"\nSaving to file: {filepath}")
+            # print(f"Data to save: {json.dumps(data, indent=2)}")
             with open(filepath, 'w') as f:
                 json.dump(data, f, indent=2)
-            print(f"✓ Successfully saved to {filename}")
+            # print(f"✓ Successfully saved to {filename}")
         except Exception as e:
             print(f"❌ Error saving to JSON file {filename}: {str(e)}")
             print(f"File path: {filepath}")
@@ -92,14 +92,14 @@ class FirebaseService:
         """Load data from JSON file"""
         try:
             filepath = os.path.join(self.data_dir, filename)
-            print(f"\nLoading from file: {filepath}")
+            # print(f"\nLoading from file: {filepath}")
             if os.path.exists(filepath):
                 print(f"File exists, size: {os.path.getsize(filepath)} bytes")
                 with open(filepath, 'r') as f:
                     data = json.load(f)
-                print(f"✓ Successfully loaded from {filename}")
+                # print(f"✓ Successfully loaded from {filename}")
                 json_str = json.dumps(data, indent=2)
-                print(f"Loaded data: {json_str[:30]}...")
+                # print(f"Loaded data: {json_str[:30]}...")
                 return data
             else:
                 print(f"❌ File does not exist: {filepath}")
@@ -134,7 +134,7 @@ class FirebaseService:
             if filename == 'agent_data.json':
                 print("Uploading agent data to RTDB...")
                 self.db.child('agents').set(data)
-                print("✓ Agent data uploaded successfully to RTDB")
+                # print("✓ Agent data uploaded successfully to RTDB")
             elif filename == 'status.json':
                 print("Skipping status.json upload as it's local-only")
             else:
@@ -213,7 +213,7 @@ class FirebaseService:
             print("Uploading agent data to RTDB...")
             print(f"Uploading to path: /agents")
             self.db.child('agents').set(agents_data)
-            print("✓ Agent data uploaded successfully to RTDB")
+            # print("✓ Agent data uploaded successfully to RTDB")
             print("=== RTDB Upload Complete ===\n")
             
             print(f"✓ Completed status update for agent {agent_id}")
@@ -244,7 +244,7 @@ class FirebaseService:
             print("Uploading agent data to RTDB...")
             print(f"Uploading to path: /agents")
             self.db.child('agents').set(agents_data)
-            print("✓ Agent data uploaded successfully to RTDB")
+            # print("✓ Agent data uploaded successfully to RTDB")
             print("=== RTDB Upload Complete ===\n")
             
             print(f"✓ Completed metrics update for agent {agent_id}")
@@ -370,7 +370,7 @@ class FirebaseService:
             print("Uploading agent data to RTDB...")
             print(f"Uploading to path: /agents")
             self.db.child('agents').set(agents_data)
-            print("✓ Agent data uploaded successfully to RTDB")
+            # print("✓ Agent data uploaded successfully to RTDB")
             print("=== RTDB Upload Complete ===\n")
             
             print(f"✓ Completed performance update for agent {agent_id}")

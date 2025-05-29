@@ -261,16 +261,29 @@ if __name__ == "__main__":
     parser.add_argument('-i', '--interactive', action='store_true', help='Run in interactive testing mode with UI')
     args = parser.parse_args()
     
-    # Configure the test
-    config = import_test_configuration(config_file='testing_settings.ini')
+    # Read server configuration first to get agent ID
+    server_url, agent_id, mapping_config, env_file_path = read_server_config(args.server_config)
+    
+    # Configure the test based on mode
+    if args.interactive:
+        config = import_test_configuration(config_file='testing_settings_interactive.ini')
+        print("Running in interactive mode with UI")
+    else:
+        config = import_test_configuration(config_file='testing_settings.ini')
+        print("Running in non-interactive mode")
+    
+    # Update SUMO config file name based on agent ID and mode
+    if agent_id:
+        if args.interactive:
+            config['sumocfg_file_name'] = f'sumo_config_interactive.sumocfg'
+        else:
+            config['sumocfg_file_name'] = f'sumo_config.sumocfg'
+        print(f"Using SUMO config file: {config['sumocfg_file_name']}")
     
     # Override interactive setting from command line
     config['interactive_testing'] = args.interactive
     
     sumo_cmd = set_sumo(config['gui'], config['sumocfg_file_name'], config['max_steps'])
-    
-    # Read server configuration first to get agent ID
-    server_url, agent_id, mapping_config, env_file_path = read_server_config(args.server_config)
     
     # Find the latest model for this agent
     models_dir = config['models_path_name']
@@ -371,4 +384,4 @@ if __name__ == "__main__":
         queue_length_episode = Simulation.queue_length_episode
         print("Average queue length:", np.mean(queue_length_episode))
         print("End of testing")
-        Simulation.cleanup()
+Simulation.cleanup()

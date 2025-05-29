@@ -13,9 +13,9 @@ from matplotlib.figure import Figure
 import requests
 
 # phase codes based on environment.net.xml
-PHASE_NS_GREEN = 0  # action 0 code 00
+PHASE_NS_GREEN = 0  # action 0 code 00   4
 PHASE_NS_YELLOW = 1
-PHASE_NSL_GREEN = 2  # action 1 code 01
+PHASE_NSL_GREEN = 2  # action 1 code 01   0
 PHASE_NSL_YELLOW = 3
 PHASE_EW_GREEN = 4  # action 2 code 10
 PHASE_EW_YELLOW = 5
@@ -66,7 +66,8 @@ class InteractiveSimulation(QObject):
         # Simulation control
         self.running = False
         self.step = 0
-        self.speed = 2.0
+        self.speed = 2.0  # Base speed
+        self.simulation_delay = 0.5  # 500ms delay for 2x realtime
         self.auto_spawn = True
         self.spawn_interval = 4
         self.spawn_interval_random = True
@@ -78,21 +79,65 @@ class InteractiveSimulation(QObject):
         self.max_count = 8
         self.last_spawn_step = 0
 
-        # Road IDs and their connections
+        # Road IDs for this intersection
         self.roads = {
-            'north': 'N2TL',
-            'south': 'S2TL',
-            'east': 'E2TL',
-            'west': 'W2TL'
+            'north': 'N2TL',  # North to Traffic Light
+            'south': 'S2TL',  # South to Traffic Light
+            'east': 'E2TL',   # East to Traffic Light
+            'west': 'W2TL'    # West to Traffic Light
         }
 
-        # Map road IDs to connected intersections
-        self.road_connections = {
-            'N2TL': 'agent2',  # North road connects to agent2
-            'S2TL': 'agent3',  # South road connects to agent3
-            'E2TL': 'agent4',  # East road connects to agent4
-            'W2TL': 'agent1'   # West road connects to agent1
+        # Exit roads from this intersection
+        self.exit_roads = {
+            'north': 'TL2N',  # Traffic Light to North
+            'south': 'TL2S',  # Traffic Light to South
+            'east': 'TL2E',   # Traffic Light to East
+            'west': 'TL2W'    # Traffic Light to West
         }
+
+        # Get connections from mapping config
+        self.road_connections = {}
+        if mapping_config and 'map' in mapping_config:
+            connected_to = mapping_config['map'].get('connected_to', [])
+            connection_distance = mapping_config['map'].get('connection_distance', 1.5)
+            
+            # Map exit roads to connected intersections based on configuration
+            for connection in connected_to:
+                print(f"Connection: {connection}, Agent ID: {agent_id}")
+                if connection.startswith('agent'):
+                    # Get the direction from the connection name (e.g., 'agent2_north')
+                    parts = connection.split('_')
+                    if len(parts) >= 2:
+                        connected_agent_id = parts[0]  # Use connected_agent_id instead of overwriting agent_id
+                        direction = parts[1].lower()
+                        
+                        # Map the exit road to the connected agent
+                        if direction == 'north':
+                            self.road_connections['TL2N'] = connected_agent_id
+                        elif direction == 'south':
+                            self.road_connections['TL2S'] = connected_agent_id
+                        elif direction == 'east':
+                            self.road_connections['TL2E'] = connected_agent_id
+                        elif direction == 'west':
+                            self.road_connections['TL2W'] = connected_agent_id
+
+        # Print road connections for debugging
+        print("Road connections mapping:")
+        for road, agent in self.road_connections.items():
+            print(f"{road} -> {agent}")
+
+        # If no connections were found, set default connections
+        if not self.road_connections:
+            print("No connections found in mapping config, using default connections")
+            self.road_connections = {
+                'TL2N': 'agent1',  # North exit connects to agent1
+                'TL2S': 'agent2',  # South exit connects to agent2
+                'TL2E': 'agent3',  # East exit connects to agent3
+                'TL2W': 'agent4'   # West exit connects to agent4
+            }
+            print("Default road connections mapping:")
+            for road, agent in self.road_connections.items():
+                print(f"{road} -> {agent}")
 
         # Vehicle type distribution (N-S Dominant preset)
         self.vehicle_types = {
@@ -167,6 +212,10 @@ class InteractiveSimulation(QObject):
             app = QApplication([])
         self.window = MainWindow()
 
+        # Initialize auto_spawn checkbox state
+        self.window.auto_spawn_check.setChecked(self.auto_spawn)
+        print(f"[INIT] Auto spawn initialized to: {self.auto_spawn}")
+
         # Connect signals to window slots
         self.step_updated.connect(self.window.update_step)
         self.vehicle_updated.connect(self.window.update_vehicles)
@@ -237,6 +286,34 @@ class InteractiveSimulation(QObject):
                     # Choose the light phase to activate
                     action = self._choose_action(current_state)
 
+                    #Todo: remove after testing
+                    #choose sequence from 0 to 7 after every 5s realtime
+                    phase_index = self._step % 8  # This will give us 0-7
+                    if phase_index % 2 == 0:  # Even numbers are green phases
+                        action = phase_index // 2  # Map to 0-3 for green phases
+                    else:  # Odd numbers are yellow phases
+                        action = (phase_index - 1) // 2  # Map to 0-3 for yellow phases
+
+                    print(f"Agent hard action: {action}")
+                    
+                    # Print phase name based on action
+                    if action == 0:
+                        print("NS Green")
+                    elif action == 1:
+                        print("NSL Green")
+                    elif action == 2:
+                        print("EW Green")
+                    elif action == 3:
+                        print("EWL Green")
+                    elif action == 4:
+                        print("NS Yellow")
+                    elif action == 5:
+                        print("NSL Yellow")
+                    elif action == 6:
+                        print("EW Yellow")
+                    elif action == 7:
+                        print("EWL Yellow")
+
                     # If the chosen phase is different from the last phase, activate the yellow phase
                     if self._step != 0 and old_action != action:
                         self._set_yellow_phase(old_action)
@@ -259,9 +336,10 @@ class InteractiveSimulation(QObject):
                     self.stats_updated.emit(self.get_statistics())
                     self.cumulative_stats_updated.emit(self.get_cumulative_statistics())
 
-                    # Track vehicles and handle incoming vehicles
-                    self._track_vehicles()
-                    self._check_incoming_vehicles()
+                    # Only track vehicles and handle incoming vehicles if auto_spawn is enabled
+                    if self.auto_spawn:
+                        self._track_vehicles()
+                        self._check_incoming_vehicles()
 
                     # Update server with state and get new sync timing
                     if self._server_url:
@@ -369,6 +447,9 @@ class InteractiveSimulation(QObject):
     def spawn_random_vehicle(self):
         """Spawn a random vehicle in the simulation"""
         try:
+            if not self.auto_spawn:
+                return
+
             # Select vehicle type based on distribution
             vehicle_type = random.choices(
                 list(self.vehicle_types.keys()),
@@ -399,7 +480,7 @@ class InteractiveSimulation(QObject):
                 departSpeed=str(speed)
             )
         except Exception as e:
-            print(f"Error spawning random vehicle: {e}")
+            print(f"[SPAWN] Error spawning random vehicle: {e}")
 
     def _get_state(self):
         """
@@ -509,6 +590,8 @@ class InteractiveSimulation(QObject):
         """Track vehicles that enter and exit the simulation"""
         if not traci.isLoaded():
             return
+        if not self.auto_spawn:
+            return
 
         try:
             # Get current vehicles
@@ -523,13 +606,12 @@ class InteractiveSimulation(QObject):
                     # Skip if vehicle is already being tracked for exit
                     if vehicle_id in self._exited_vehicles:
                         continue
-                        
                     # Get vehicle's current road and position
                     current_road = traci.vehicle.getRoadID(vehicle_id)
                     current_position = traci.vehicle.getLanePosition(vehicle_id)
                     
-                    # Check if vehicle is approaching a boundary
-                    if current_road in self.roads.values():
+                    # Check if vehicle is on an exit road and approaching the boundary
+                    if current_road in self.exit_roads.values():
                         # Check if vehicle is near the boundary point
                         if current_position >= boundary_distance:
                             # Get vehicle details
@@ -540,58 +622,63 @@ class InteractiveSimulation(QObject):
                             position = traci.vehicle.getPosition(vehicle_id)
                             waiting_time = traci.vehicle.getAccumulatedWaitingTime(vehicle_id)
                             
-                            # Determine exit direction based on road
+                            # Determine exit direction and destination agent based on road
                             exit_direction = None
-                            if current_road == 'N2TL':
+                            destination_agent = None
+                            
+                            if current_road == 'TL2N':
                                 exit_direction = 'north'
-                            elif current_road == 'S2TL':
+                                destination_agent = self.road_connections.get('TL2N')
+                            elif current_road == 'TL2S':
                                 exit_direction = 'south'
-                            elif current_road == 'E2TL':
+                                destination_agent = self.road_connections.get('TL2S')
+                            elif current_road == 'TL2E':
                                 exit_direction = 'east'
-                            elif current_road == 'W2TL':
+                                destination_agent = self.road_connections.get('TL2E')
+                            elif current_road == 'TL2W':
                                 exit_direction = 'west'
-                            
-                            # Store vehicle info
-                            self._exited_vehicles[vehicle_id] = {
-                                'type': vehicle_type,
-                                'route': route,
-                                'speed': speed,
-                                'lane': lane,
-                                'position': position,
-                                'waiting_time': waiting_time,
-                                'is_boundary_exit': True,
-                                'exit_direction': exit_direction,
-                                'destination': self.road_connections.get(current_road),
-                                'timestamp': time.time()
-                            }
-                            
-                            # Log vehicle approaching boundary
-                            print(f"Vehicle {vehicle_id} approaching {exit_direction} boundary on {current_road}")
-                            print(f"Vehicle details: type={vehicle_type}, speed={speed:.2f}, waiting_time={waiting_time:.2f}")
-                            
-                            # Send vehicle info to server if connected
-                            if self._server_url and exit_direction:
-                                transfer_data = {
-                                    'vehicle_id': vehicle_id,
+                                destination_agent = self.road_connections.get('TL2W')
+
+                            # Only proceed if we have both exit direction and destination
+                            if exit_direction and destination_agent:
+                                # Store vehicle info
+                                self._exited_vehicles[vehicle_id] = {
                                     'type': vehicle_type,
                                     'route': route,
                                     'speed': speed,
                                     'lane': lane,
                                     'position': position,
                                     'waiting_time': waiting_time,
+                                    'is_boundary_exit': True,
                                     'exit_direction': exit_direction,
-                                    'from_agent': self._agent_id,
-                                    'to_agent': self.road_connections.get(current_road),
+                                    'destination': destination_agent,
                                     'timestamp': time.time()
                                 }
                                 
-                                # Send state update with vehicle transfer data
-                                self._communicator.send_state(None, self._step, {
-                                    'vehicle_transfer': transfer_data
-                                })
-                                
-                                # Emit signal for UI update
-                                self.vehicle_updated.emit(transfer_data)
+                                # Send vehicle info to server if connected
+                                if self._server_url:
+                                    transfer_data = {
+                                        'vehicle_id': vehicle_id,
+                                        'type': vehicle_type,
+                                        'route': route,
+                                        'speed': speed,
+                                        'lane': lane,
+                                        'position': position,
+                                        'waiting_time': waiting_time,
+                                        'exit_direction': exit_direction,
+                                        'from_agent': self._agent_id,
+                                        'to_agent': destination_agent,
+                                        'timestamp': time.time()
+                                    }
+                                    
+                                    # Send state update with vehicle transfer data
+                                    self._communicator.send_state(None, self._step, {
+                                        'vehicle_transfer': transfer_data
+                                    })
+                                    print(f"Sent vehicle {vehicle_id} to agent {destination_agent}")
+                                    
+                                    # Emit signal for UI update
+                                    self.vehicle_updated.emit(transfer_data)
                             
                 except traci.exceptions.TraCIException:
                     # Vehicle is no longer in simulation, skip it
@@ -604,19 +691,6 @@ class InteractiveSimulation(QObject):
             for vehicle_id in exited:
                 # Remove from active vehicles
                 self._active_vehicles.discard(vehicle_id)
-                
-                # If we didn't track this vehicle at the boundary, log it
-                if vehicle_id not in self._exited_vehicles:
-                    print(f"Vehicle {vehicle_id} exited without boundary detection")
-                else:
-                    # Log final vehicle stats
-                    vehicle_data = self._exited_vehicles[vehicle_id]
-                    print(f"Vehicle {vehicle_id} exited simulation:")
-                    print(f"  Type: {vehicle_data['type']}")
-                    print(f"  Route: {vehicle_data['route']}")
-                    print(f"  Exit direction: {vehicle_data['exit_direction']}")
-                    print(f"  Destination: {vehicle_data['destination']}")
-                    print(f"  Waiting time: {vehicle_data['waiting_time']:.2f}")
             
             # Update active vehicles
             self._active_vehicles = current_vehicles
@@ -625,32 +699,36 @@ class InteractiveSimulation(QObject):
             print(f"Error in _track_vehicles: {e}")
 
     def _check_incoming_vehicles(self):
-        return
         """Check for and spawn incoming vehicles from other intersections"""
-        if not traci.isLoaded() or not self._server_url:
-            print("[DEBUG] Skipping incoming vehicles check - TraCI not loaded or no server URL")
+        print(f"Checking for incoming vehicles to {self._agent_id}")
+        if not traci.isLoaded():
+            return
+        if not self._server_url:
+            return
+        if not self.auto_spawn:
             return
 
         try:
-            print("[DEBUG] Starting incoming vehicles check")
             # Get vehicle transfers from the server
             response = requests.get(f"{self._server_url}/api/vehicle_transfers?agent_id={self._agent_id}")
-            print(f"[DEBUG] Server response status: {response.status_code}")
-            
-            if response.status_code == 200:
-                vehicle_transfers = response.json()
-                print(f"[DEBUG] Received {len(vehicle_transfers)} vehicle transfers")
-                print(f"[DEBUG] Vehicle transfers data: {vehicle_transfers}")
+            if response.status_code != 200:
+                print(f"Error getting vehicle transfers: {response.text}")
+                return
+            print(f"Received vehicle transfers: {response.json()}")
+            vehicle_transfers = response.json()
+            if not vehicle_transfers:
+                return
                 
-                for vehicle_data in vehicle_transfers:
-                    print(f"\n[DEBUG] Processing vehicle: {vehicle_data.get('vehicle_id', 'unknown')}")
+            print(f"Received {len(vehicle_transfers)} vehicles to spawn")
+            
+            for vehicle_data in vehicle_transfers:
+                try:
                     # Add to incoming vehicles list with spawn position
                     entry_road = None
                     entry_lane = 0
                     
                     # Determine entry road based on exit direction from previous intersection
                     if vehicle_data.get('exit_direction'):
-                        print(f"[DEBUG] Exit direction: {vehicle_data['exit_direction']}")
                         if vehicle_data['exit_direction'] == 'north':
                             entry_road = 'S2TL'
                         elif vehicle_data['exit_direction'] == 'south':
@@ -659,23 +737,18 @@ class InteractiveSimulation(QObject):
                             entry_road = 'W2TL'
                         elif vehicle_data['exit_direction'] == 'west':
                             entry_road = 'E2TL'
-                        print(f"[DEBUG] Selected entry road: {entry_road}")
-                    else:
-                        print("[DEBUG] No exit direction found in vehicle data")
+                    print(f"Entry road: {entry_road}")
                     
                     if entry_road:
                         try:
-                            print(f"[DEBUG] Getting road shape for {entry_road}")
-                            # Get road shape using the correct TraCI method
+                            # Get road shape using traci.edge.getShape
                             road_shape = traci.edge.getShape(entry_road)
                             if road_shape:
                                 # Get the connection point (first point of the road)
                                 spawn_pos = road_shape[0]
-                                print(f"[DEBUG] Got road shape, spawn position: {spawn_pos}")
                                 
-                                # Get the road length to determine spawn position
+                                # Get the road length
                                 road_length = traci.edge.getLength(entry_road)
-                                print(f"[DEBUG] Road length: {road_length}")
                                 
                                 # Add spawn information to vehicle data
                                 vehicle_data['spawn_road'] = entry_road
@@ -685,42 +758,49 @@ class InteractiveSimulation(QObject):
                                 
                                 # Add to incoming vehicles list
                                 self._incoming_vehicles.append(vehicle_data)
-                                print(f"[DEBUG] Queued vehicle for spawn on {entry_road} at position {spawn_pos}")
                             else:
-                                print(f"[DEBUG] No road shape found for {entry_road}")
+                                vehicle_data['spawn_road'] = entry_road
+                                vehicle_data['spawn_lane'] = entry_lane
+                                vehicle_data['spawn_position'] = None
+                                self._incoming_vehicles.append(vehicle_data)
                         except Exception as e:
-                            print(f"[DEBUG] Error getting road shape for {entry_road}: {e}")
+                            print(f"Error getting road shape for {entry_road}: {e}")
                             # If we can't get the road shape, still try to spawn the vehicle
                             vehicle_data['spawn_road'] = entry_road
                             vehicle_data['spawn_lane'] = entry_lane
                             vehicle_data['spawn_position'] = None
                             self._incoming_vehicles.append(vehicle_data)
-                            print(f"[DEBUG] Queued vehicle for spawn on {entry_road} (without position)")
-                    else:
-                        print("[DEBUG] No entry road determined, skipping vehicle")
+                    
+                    # Delete vehicle transfer data after processing
+                    try:
+                        response = requests.delete(f"{self._server_url}/api/vehicle_transfer/{vehicle_data['vehicle_id']}")
+                        if response.status_code == 200:
+                            print(f"Deleted vehicle transfer for {vehicle_data['vehicle_id']}")
+                        else:
+                            print(f"Failed to delete vehicle transfer for {vehicle_data['vehicle_id']}: {response.text}")
+                    except Exception as e:
+                        print(f"Error deleting vehicle transfer data: {e}")
+                        
+                except Exception as e:
+                    print(f"Error processing vehicle transfer: {e}")
+                    continue
             
             # Spawn any incoming vehicles
-            print(f"\n[DEBUG] Starting to spawn {len(self._incoming_vehicles)} queued vehicles")
             while self._incoming_vehicles:
                 vehicle_data = self._incoming_vehicles.pop(0)
                 try:
-                    print(f"\n[DEBUG] Processing queued vehicle: {vehicle_data.get('vehicle_id', 'unknown')}")
                     # Create route for the vehicle
                     route_id = f"route_{vehicle_data['vehicle_id']}"
                     route_edges = [vehicle_data['spawn_road']]
-                    print(f"[DEBUG] Initial route edge: {route_edges}")
                     
                     # Add destination edge based on original route
                     if 'route' in vehicle_data:
-                        print(f"[DEBUG] Original route: {vehicle_data['route']}")
                         route_parts = vehicle_data['route'].split('_')
-                        print(f"[DEBUG] Route parts: {route_parts}")
                         
                         if len(route_parts) >= 2:
                             # Map the route parts to actual edge names
                             from_dir = route_parts[0]
                             to_dir = route_parts[1]
-                            print(f"[DEBUG] From direction: {from_dir}, To direction: {to_dir}")
                             
                             # Map directions to edge names
                             edge_map = {
@@ -733,27 +813,17 @@ class InteractiveSimulation(QObject):
                             # Add the destination edge if it exists in our map
                             if to_dir in edge_map:
                                 route_edges.append(edge_map[to_dir])
-                                print(f"[DEBUG] Added destination edge: {edge_map[to_dir]}")
-                            else:
-                                print(f"[DEBUG] No mapping found for direction: {to_dir}")
-                    
-                    print(f"[DEBUG] Final route edges: {route_edges}")
-                    print(f"[DEBUG] Creating route {route_id}")
                     
                     # Add the route
                     traci.route.add(route_id, route_edges)
-                    print(f"[DEBUG] Route created successfully")
-                    
-                    # Spawn the vehicle
-                    print(f"[DEBUG] Spawning vehicle with ID: {vehicle_data['vehicle_id']}")
                     
                     # Set spawn position if available
                     depart_pos = "0"
                     if vehicle_data.get('spawn_position'):
                         # Convert position to distance from start of road
                         depart_pos = "0"
-                        print(f"[DEBUG] Using spawn position: {depart_pos}")
                     
+                    # Spawn the vehicle
                     traci.vehicle.add(
                         vehID=vehicle_data['vehicle_id'],
                         routeID=route_id,
@@ -762,30 +832,16 @@ class InteractiveSimulation(QObject):
                         departSpeed=str(vehicle_data['speed']),
                         departPos=depart_pos
                     )
-                    print(f"[DEBUG] Vehicle spawned successfully")
-                    
-                    # Delete vehicle transfer data after successful spawning
-                    try:
-                        print(f"[DEBUG] Attempting to delete vehicle transfer data")
-                        response = requests.delete(f"{self._server_url}/api/vehicle_transfer/{vehicle_data['vehicle_id']}")
-                        if response.status_code == 200:
-                            print(f"[DEBUG] Successfully deleted vehicle transfer data")
-                        else:
-                            print(f"[DEBUG] Failed to delete vehicle transfer data: {response.status_code}")
-                    except Exception as e:
-                        print(f"[DEBUG] Error deleting vehicle transfer data: {e}")
+                    print(f"Spawned vehicle {vehicle_data['vehicle_id']} on {vehicle_data['spawn_road']}")
                     
                 except Exception as e:
-                    print(f"[DEBUG] Error spawning vehicle: {e}")
-                    print(f"[DEBUG] Vehicle data: {vehicle_data}")
+                    print(f"Error spawning vehicle: {e}")
                     # Put the vehicle back in the queue if there was an error
                     self._incoming_vehicles.insert(0, vehicle_data)
-                    print("[DEBUG] Vehicle re-queued for next attempt")
                     break
+                    
         except Exception as e:
-            print(f"[DEBUG] Error in _check_incoming_vehicles: {e}")
-            import traceback
-            print(f"[DEBUG] Full traceback:\n{traceback.format_exc()}")
+            print(f"Error in _check_incoming_vehicles: {e}")
 
     def _simulate(self, steps_todo):
         """
@@ -813,14 +869,18 @@ class InteractiveSimulation(QObject):
                 
                 # Emit step update signal
                 self.step_updated.emit(self._step)
+                
+                # Add delay for 2x realtime speed
+                time.sleep(self.simulation_delay)
+                
             except traci.exceptions.FatalTraCIError as e:
-                print(f"TraCI error during simulation step: {e}")
+                print(f"[SIM] TraCI error during simulation step: {e}")
                 self.running = False
                 self.window.start_button.setText("Start Simulation")
                 self.window.status_label.setText("Status: Error - Connection lost")
                 break
             except Exception as e:
-                print(f"Unexpected error during simulation step: {e}")
+                print(f"[SIM] Unexpected error during simulation step: {e}")
                 self.running = False
                 self.window.start_button.setText("Start Simulation")
                 self.window.status_label.setText("Status: Error - Unexpected error")
@@ -1217,8 +1277,10 @@ class InteractiveSimulation(QObject):
 
     def toggle_auto_spawn(self, state):
         """Toggle auto-spawn state based on checkbox"""
+        old_state = self.auto_spawn
         self.auto_spawn = bool(state)
-        print(f"Auto-spawn {'enabled' if self.auto_spawn else 'disabled'}")
+        print(f"[TOGGLE] Auto-spawn changed from {old_state} to {self.auto_spawn}")
+        print(f"[TOGGLE] Checkbox state: {state}")
 
     def set_traffic_light_phase(self, phase):
         """
