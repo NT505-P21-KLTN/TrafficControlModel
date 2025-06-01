@@ -143,9 +143,8 @@ class Simulation:
         self._reward_episode = []
         self._queue_length_episode = []
         
-        # Only generate route file if not using -n flag
-        if not self._no_route_file:
-            self._TrafficGen.generate_routefile(seed=episode)
+        # Generate route file (empty if -n flag is used)
+        self._TrafficGen.generate_routefile(seed=episode)
             
         traci.start(self._sumo_cmd)
         print("Simulating...")
@@ -154,26 +153,7 @@ class Simulation:
         old_total_wait = 0
         old_action = -1
         while self._step < self._max_steps:
-            # Handle automatic spawning with random intervals
-            if self._no_route_file and self.auto_spawn:
-                if self.spawn_interval_random:
-                    current_interval = random.randint(self.min_interval, self.max_interval)
-                else:
-                    current_interval = self.spawn_interval
-
-                if (self._step - self.last_spawn_step) >= current_interval:
-                    self.last_spawn_step = self._step
-                    if self.spawn_count_random:
-                        count = random.randint(self.min_count, self.max_count)
-                    else:
-                        count = self.spawn_count
-                    
-                    # Spawn vehicles
-                    for _ in range(count):
-                        self._spawn_random_vehicle()
-                    print(f"Spawned {count} vehicles")
-            
-            # Check for incoming vehicles from other intersections
+            # Check for incoming vehicles from other intersections if we have a communicator
             if self.communicator:
                 self._check_incoming_vehicles()
             
@@ -343,7 +323,7 @@ class Simulation:
                 car_position = int(str(lane_group) + str(lane_cell))
                 if car_position < self._num_states:
                     state[car_position] = 1
-                    print(f"Car {car_id} at position {car_position} in lane {lane_id} (relative pos: {relative_pos:.2f})")
+                    # print(f"Car {car_id} at position {car_position} in lane {lane_id} (relative pos: {relative_pos:.2f})")
         
         print("State shape:", state.shape)
         print("Number of cars in state:", np.sum(state))

@@ -286,15 +286,15 @@ class InteractiveSimulation(QObject):
                     # Choose the light phase to activate
                     action = self._choose_action(current_state)
 
-                    #Todo: remove after testing
-                    #choose sequence from 0 to 7 after every 5s realtime
-                    phase_index = self._step % 8  # This will give us 0-7
-                    if phase_index % 2 == 0:  # Even numbers are green phases
-                        action = phase_index // 2  # Map to 0-3 for green phases
-                    else:  # Odd numbers are yellow phases
-                        action = (phase_index - 1) // 2  # Map to 0-3 for yellow phases
+                    # #Todo: remove after testing
+                    # #choose sequence from 0 to 7 after every 5s realtime
+                    # phase_index = self._step % 8  # This will give us 0-7
+                    # if phase_index % 2 == 0:  # Even numbers are green phases
+                    #     action = phase_index // 2  # Map to 0-3 for green phases
+                    # else:  # Odd numbers are yellow phases
+                    #     action = (phase_index - 1) // 2  # Map to 0-3 for yellow phases
 
-                    print(f"Agent hard action: {action}")
+                    # print(f"Agent hard action: {action}")
                     
                     # Print phase name based on action
                     if action == 0:

@@ -35,6 +35,8 @@ class TrafficGenerator:
 
         # produce the file for cars generation, one car per line
         route_file = f"intersection_{self._intersection_id}/episode_routes.rou.xml"
+        # Create the directory if it doesn't exist
+        os.makedirs(os.path.dirname(route_file), exist_ok=True)
         with open(route_file, "w") as routes:
             print("""<routes>
             <vType accel="1.0" decel="4.5" id="veh_passenger" length="5.0" minGap="2.5" maxSpeed="25" sigma="0.5" guiShape="passenger" width="1.8" height="1.5" />
@@ -56,6 +58,7 @@ class TrafficGenerator:
             <route id="S_N" edges="S2TL TL2N"/>
             <route id="S_E" edges="S2TL TL2E"/>""", file=routes)
 
+            # Only generate vehicles if not using -n flag
             if not self._no_route_file:
                 # the generation of cars is distributed according to a weibull distribution
                 timings = np.random.weibull(2, self._n_cars_generated)
@@ -110,3 +113,40 @@ class TrafficGenerator:
                             print('    <vehicle id="S_E_%i" type="%s" route="S_E" depart="%s" departLane="random" departSpeed="10" />' % (car_counter, vehicle_type, step), file=routes)
 
             print("</routes>", file=routes)
+
+    def generate_empty_routefile(self, seed):
+        """
+        Generate an empty route file with only vehicle types and routes, but no vehicles
+        """
+        if self._intersection_id is None:
+            print("No intersection ID provided")
+            return  # Skip route file generation if no intersection ID is provided
+        print(f"Generating empty route file for intersection {self._intersection_id}")
+            
+        np.random.seed(seed)  # make tests reproducible
+
+        # produce the file for cars generation, one car per line
+        route_file = f"intersection_{self._intersection_id}/episode_routes.rou.xml"
+        # Create the directory if it doesn't exist
+        os.makedirs(os.path.dirname(route_file), exist_ok=True)
+        with open(route_file, "w") as routes:
+            print("""<routes>
+            <vType accel="1.0" decel="4.5" id="veh_passenger" length="5.0" minGap="2.5" maxSpeed="25" sigma="0.5" guiShape="passenger" width="1.8" height="1.5" />
+            <vType accel="0.8" decel="3.0" id="veh_bus" length="12.0" minGap="3.0" maxSpeed="20" sigma="0.5" guiShape="bus" width="2.5" height="3.0" />
+            <vType accel="0.7" decel="2.5" id="veh_truck" length="10.0" minGap="3.0" maxSpeed="18" sigma="0.5" guiShape="truck" width="2.5" height="3.5" />
+            <vType accel="1.2" decel="5.0" id="veh_emergency" length="6.0" minGap="2.0" maxSpeed="30" sigma="0.5" guiShape="emergency" width="2.0" height="2.0" />
+            <vType accel="1.5" decel="6.0" id="veh_motorcycle" length="2.0" minGap="1.5" maxSpeed="35" sigma="0.5" guiShape="motorcycle" width="1.0" height="1.5" />
+
+            <route id="W_N" edges="W2TL TL2N"/>
+            <route id="W_E" edges="W2TL TL2E"/>
+            <route id="W_S" edges="W2TL TL2S"/>
+            <route id="N_W" edges="N2TL TL2W"/>
+            <route id="N_E" edges="N2TL TL2E"/>
+            <route id="N_S" edges="N2TL TL2S"/>
+            <route id="E_W" edges="E2TL TL2W"/>
+            <route id="E_N" edges="E2TL TL2N"/>
+            <route id="E_S" edges="E2TL TL2S"/>
+            <route id="S_W" edges="S2TL TL2W"/>
+            <route id="S_N" edges="S2TL TL2N"/>
+            <route id="S_E" edges="S2TL TL2E"/>
+            </routes>""", file=routes)

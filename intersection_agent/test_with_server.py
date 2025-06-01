@@ -53,8 +53,8 @@ def get_latest_model_for_agent(models_dir, agent_id, phase=None):
             # For phase-based models, look for trained_model_{phase}.h5
             model_file = os.path.join(model_dir, f'trained_model_{phase}.h5')
         else:
-            # For non-phase models, look for intersection_agent{num}_model.h5
-            model_file = os.path.join(model_dir, f'intersection_agent{agent_num}_model.h5')
+            # For non-phase models, look for intersection_{num}_model.h5
+            model_file = os.path.join(model_dir, f'intersection_{agent_num}_model.h5')
             
         if os.path.exists(model_file):
             return model_num, model_file
@@ -259,7 +259,7 @@ if __name__ == "__main__":
     parser.add_argument('--server-config', type=str, default='server_config_1.ini')
     parser.add_argument('--phase', type=str, help='Phase to use for model loading (e.g., "base", "sync"). If not specified, will use non-phase model.')
     parser.add_argument('-i', '--interactive', action='store_true', help='Run in interactive testing mode with UI')
-    parser.add_argument('--no-route-file', action='store_true', help='Use no route file for traffic generation')
+    parser.add_argument('-n', '--no-route-file', action='store_true', help='Do not generate route file for this intersection')
     args = parser.parse_args()
     
     # Read server configuration first to get agent ID
@@ -295,7 +295,7 @@ if __name__ == "__main__":
         if args.phase:
             print(f"Tried to find phase-based model: trained_model_{args.phase}.h5")
         else:
-            print(f"Tried to find non-phase model: intersection_agent{agent_id.replace('agent', '')}_model.h5")
+            print(f"Tried to find non-phase model: intersection_{agent_id.replace('agent', '')}_model.h5")
         sys.exit(1)
     
     # Update config with the latest model number
@@ -358,10 +358,12 @@ if __name__ == "__main__":
     else:
         # Use the default server testing simulation
         print("Using default server testing simulation")
+        # Extract agent number from agent_id (e.g., 'agent1' -> '1')
+        agent_num = agent_id.replace('agent', '') if agent_id else '1'
         TrafficGen = TrafficGenerator(
             config['max_steps'], 
             config['n_cars_generated'],
-            agent_id,
+            agent_num,
             no_route_file=args.no_route_file
         )
         simulation = TestingSimulationWithServer(
