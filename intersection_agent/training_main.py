@@ -38,7 +38,7 @@ def train_base_model(config, continue_from=None):
         print("\nStarting training from scratch (no previous model)")
     
     # Set up SUMO
-    sumo_cmd = set_sumo(config['gui'], config['sumocfg_file_name'], config['max_steps'])
+    sumo_cmd = set_sumo(config['gui'], config['sumocfg_file_name'], config['max_steps'], 'server_config_1.ini')
     path = set_train_path(config['models_path_name'])
 
     # Create model

@@ -18,7 +18,7 @@ PHASE_EWL_YELLOW = 7
 
 
 class Simulation:
-    def __init__(self, Model, TrafficGen, sumo_cmd, max_steps, green_duration, yellow_duration, num_states, num_actions, server_url=None, agent_id=None, mapping_config=None, env_file_path=None):
+    def __init__(self, Model, TrafficGen, sumo_cmd, max_steps, green_duration, yellow_duration, num_states, num_actions, server_url=None, agent_id=None, mapping_config=None, env_file_path=None, no_route_file=False):
         self._Model = Model
         self._TrafficGen = TrafficGen
         self._step = 0
@@ -31,6 +31,7 @@ class Simulation:
         self._reward_episode = []
         self._queue_length_episode = []
         self.server_url = server_url
+        self._no_route_file = no_route_file
         if server_url:
             self.communicator = AgentCommunicatorTesting(server_url, agent_id, mapping_config, env_file_path)
             self.communicator.update_status("initialized")
@@ -55,7 +56,11 @@ class Simulation:
             self.communicator.update_status("testing")
         self._reward_episode = []
         self._queue_length_episode = []
-        self._TrafficGen.generate_routefile(seed=episode)
+        
+        # Only generate route file if not using -n flag
+        if not self._no_route_file:
+            self._TrafficGen.generate_routefile(seed=episode)
+            
         traci.start(self._sumo_cmd)
         print("Simulating...")
         self._step = 0
@@ -140,7 +145,11 @@ class Simulation:
         return total_waiting_time
 
     def _choose_action(self, state):
-        return np.argmax(self._Model.predict_one(state))
+        predictions = self._Model.predict_one(state)
+        print("Model predictions:", predictions)
+        action = np.argmax(predictions)
+        print("Chosen action:", action)
+        return action
 
     def _set_yellow_phase(self, old_action):
         yellow_phase_code = old_action * 2 + 1
@@ -167,6 +176,7 @@ class Simulation:
     def _get_state(self):
         state = np.zeros(self._num_states)
         car_list = traci.vehicle.getIDList()
+        print("Number of cars:", len(car_list))
         for car_id in car_list:
             lane_pos = traci.vehicle.getLanePosition(car_id)
             lane_id = traci.vehicle.getLaneID(car_id)
@@ -209,16 +219,15 @@ class Simulation:
                 lane_group = 7
             else:
                 lane_group = -1
-            if lane_group >= 1 and lane_group <= 7:
+
+            if lane_group >= 0 and lane_group <= 7:
                 car_position = int(str(lane_group) + str(lane_cell))
-                valid_car = True
-            elif lane_group == 0:
-                car_position = lane_cell
-                valid_car = True
-            else:
-                valid_car = False
-            if valid_car:
-                state[car_position] = 1
+                if car_position < self._num_states:
+                    state[car_position] = 1
+                    print(f"Car {car_id} at position {car_position} in lane {lane_id}")
+        
+        print("State shape:", state.shape)
+        print("Number of cars in state:", np.sum(state))
         if self.communicator:
             self.communicator.send_state(state.tolist(), self._step)
         return state

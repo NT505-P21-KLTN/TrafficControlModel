@@ -53,7 +53,7 @@ def import_test_configuration(config_file):
     return config
 
 
-def set_sumo(gui, sumocfg_file_name, max_steps):
+def set_sumo(gui, sumocfg_file_name, max_steps, server_config_file='server_config_1.ini'):
     """
     Configure various parameters of SUMO
     """
@@ -70,8 +70,22 @@ def set_sumo(gui, sumocfg_file_name, max_steps):
     else:
         sumoBinary = checkBinary('sumo-gui')
  
+    # Get intersection ID from server config
+    intersection_id = None
+    if os.path.exists(server_config_file):
+        config = configparser.ConfigParser()
+        config.read(server_config_file)
+        if 'server' in config:
+            agent_id = config['server'].get('agent_id', '1')
+            # Extract number from agent_id (e.g., "agent1" -> "1")
+            intersection_id = ''.join(filter(str.isdigit, agent_id))
+    
+    # If no intersection ID found, default to 1
+    if not intersection_id:
+        intersection_id = '1'
+    
     # setting the cmd command to run sumo at simulation time
-    sumo_cmd = [sumoBinary, "-c", os.path.join('intersection', sumocfg_file_name), "--no-step-log", "true", "--waiting-time-memory", str(max_steps)]
+    sumo_cmd = [sumoBinary, "-c", os.path.join(f'intersection_{intersection_id}', sumocfg_file_name), "--no-step-log", "true", "--waiting-time-memory", str(max_steps)]
 
     return sumo_cmd
 

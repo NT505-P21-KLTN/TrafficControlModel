@@ -74,6 +74,7 @@ def read_server_config(config_file='server_config_1.ini'):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument('--server-config', type=str, default='server_config_1.ini')
+    parser.add_argument('-n', '--no-route-file', action='store_true', help='Do not generate route file for this intersection')
     args = parser.parse_args()
 
     config = import_test_configuration(config_file='testing_settings.ini')
@@ -92,7 +93,7 @@ if __name__ == "__main__":
     print(f"\nUsing latest model for agent {agent_number}: model_{latest_model}")
     config['model_to_test'] = latest_model
     
-    sumo_cmd = set_sumo(config['gui'], config['sumocfg_file_name'], config['max_steps'])
+    sumo_cmd = set_sumo(config['gui'], config['sumocfg_file_name'], config['max_steps'], args.server_config)
     model_path, plot_path = set_test_path(config['models_path_name'], config['model_to_test'])
 
     if server_url:
@@ -107,7 +108,8 @@ if __name__ == "__main__":
 
     TrafficGen = TrafficGenerator(
         config['max_steps'], 
-        config['n_cars_generated']
+        config['n_cars_generated'],
+        intersection_id=agent_id  # Pass the agent_id as intersection_id
     )
 
     Visualization = Visualization(
@@ -127,7 +129,8 @@ if __name__ == "__main__":
         server_url,
         agent_id,
         mapping_config,
-        env_file_path
+        env_file_path,
+        no_route_file=args.no_route_file  # Pass the no_route_file flag
     )
 
     print('\n----- Test episode')

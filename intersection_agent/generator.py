@@ -1,10 +1,16 @@
 import numpy as np
 import math
+import os
 
 class TrafficGenerator:
-    def __init__(self, max_steps, n_cars_generated):
+    def __init__(self, max_steps, n_cars_generated, intersection_id=None):
         self._n_cars_generated = n_cars_generated  # how many cars per episode
         self._max_steps = max_steps
+        self._intersection_id = intersection_id
+        
+        # Create intersection folder if it doesn't exist
+        if intersection_id is not None:
+            os.makedirs(f"intersection_{intersection_id}", exist_ok=True)
         
         # Vehicle type distribution (matching the N-S Dominant preset)
         self.vehicle_types = {
@@ -19,6 +25,11 @@ class TrafficGenerator:
         """
         Generation of the route of every car for one episode
         """ 
+        if self._intersection_id is None:
+            print("No intersection ID provided")
+            return  # Skip route file generation if no intersection ID is provided
+        print(f"Generating route file for intersection {self._intersection_id}")
+            
         np.random.seed(seed)  # make tests reproducible
 
         # the generation of cars is distributed according to a weibull distribution
@@ -37,13 +48,14 @@ class TrafficGenerator:
         car_gen_steps = np.rint(car_gen_steps)  # round every value to int -> effective steps when a car will be generated
 
         # produce the file for cars generation, one car per line
-        with open("intersection/episode_routes.rou.xml", "w") as routes:
+        route_file = f"intersection_{self._intersection_id}/episode_routes.rou.xml"
+        with open(route_file, "w") as routes:
             print("""<routes>
-            <vType accel="1.0" decel="4.5" id="veh_passenger" length="5.0" minGap="2.5" maxSpeed="25" sigma="0.5" guiShape="passenger" />
-            <vType accel="0.8" decel="3.0" id="veh_bus" length="12.0" minGap="3.0" maxSpeed="20" sigma="0.5" guiShape="bus" />
-            <vType accel="0.7" decel="2.5" id="veh_truck" length="10.0" minGap="3.0" maxSpeed="18" sigma="0.5" guiShape="truck" />
-            <vType accel="1.2" decel="5.0" id="veh_emergency" length="6.0" minGap="2.0" maxSpeed="30" sigma="0.5" guiShape="emergency" />
-            <vType accel="1.5" decel="6.0" id="veh_motorcycle" length="2.0" minGap="1.5" maxSpeed="35" sigma="0.5" guiShape="motorcycle" />
+            <vType accel="1.0" decel="4.5" id="veh_passenger" length="5.0" minGap="2.5" maxSpeed="25" sigma="0.5" guiShape="passenger" width="1.8" height="1.5" />
+            <vType accel="0.8" decel="3.0" id="veh_bus" length="12.0" minGap="3.0" maxSpeed="20" sigma="0.5" guiShape="bus" width="2.5" height="3.0" />
+            <vType accel="0.7" decel="2.5" id="veh_truck" length="10.0" minGap="3.0" maxSpeed="18" sigma="0.5" guiShape="truck" width="2.5" height="3.5" />
+            <vType accel="1.2" decel="5.0" id="veh_emergency" length="6.0" minGap="2.0" maxSpeed="30" sigma="0.5" guiShape="emergency" width="2.0" height="2.0" />
+            <vType accel="1.5" decel="6.0" id="veh_motorcycle" length="2.0" minGap="1.5" maxSpeed="35" sigma="0.5" guiShape="motorcycle" width="1.0" height="1.5" />
 
             <route id="W_N" edges="W2TL TL2N"/>
             <route id="W_E" edges="W2TL TL2E"/>

@@ -283,7 +283,7 @@ if __name__ == "__main__":
     # Override interactive setting from command line
     config['interactive_testing'] = args.interactive
     
-    sumo_cmd = set_sumo(config['gui'], config['sumocfg_file_name'], config['max_steps'])
+    sumo_cmd = set_sumo(config['gui'], config['sumocfg_file_name'], config['max_steps'], args.server_config)
     
     # Find the latest model for this agent
     models_dir = config['models_path_name']
@@ -359,7 +359,8 @@ if __name__ == "__main__":
         print("Using default server testing simulation")
         TrafficGen = TrafficGenerator(
             config['max_steps'], 
-            config['n_cars_generated']
+            config['n_cars_generated'],
+            agent_id
         )
         Simulation = TestingSimulationWithServer(
             Model,

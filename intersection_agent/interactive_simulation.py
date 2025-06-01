@@ -736,36 +736,19 @@ class InteractiveSimulation(QObject):
                     print(f"Entry road: {entry_road}")
                     
                     if entry_road:
+                        # Get the road length
                         try:
-                            # Get road shape using traci.edge.getShape
-                            road_shape = traci.edge.getShape(entry_road)
-                            if road_shape:
-                                # Get the connection point (first point of the road)
-                                spawn_pos = road_shape[0]
-                                
-                                # Get the road length
-                                road_length = traci.edge.getLength(entry_road)
-                                
-                                # Add spawn information to vehicle data
-                                vehicle_data['spawn_road'] = entry_road
-                                vehicle_data['spawn_lane'] = entry_lane
-                                vehicle_data['spawn_position'] = spawn_pos
-                                vehicle_data['road_length'] = road_length
-                                
-                                # Add to incoming vehicles list
-                                self._incoming_vehicles.append(vehicle_data)
-                            else:
-                                vehicle_data['spawn_road'] = entry_road
-                                vehicle_data['spawn_lane'] = entry_lane
-                                vehicle_data['spawn_position'] = None
-                                self._incoming_vehicles.append(vehicle_data)
-                        except Exception as e:
-                            print(f"Error getting road shape for {entry_road}: {e}")
-                            # If we can't get the road shape, still try to spawn the vehicle
-                            vehicle_data['spawn_road'] = entry_road
-                            vehicle_data['spawn_lane'] = entry_lane
-                            vehicle_data['spawn_position'] = None
-                            self._incoming_vehicles.append(vehicle_data)
+                            road_length = traci.edge.getLength(entry_road)
+                        except:
+                            road_length = 100.0  # Default length if we can't get it
+                            
+                        # Add spawn information to vehicle data
+                        vehicle_data['spawn_road'] = entry_road
+                        vehicle_data['spawn_lane'] = entry_lane
+                        vehicle_data['road_length'] = road_length
+                        
+                        # Add to incoming vehicles list
+                        self._incoming_vehicles.append(vehicle_data)
                     
                     # Delete vehicle transfer data after processing
                     try:
