@@ -4,6 +4,8 @@ import random
 import timeit
 import os
 import time
+import requests
+import xml.etree.ElementTree as ET
 from agent_communicator import AgentCommunicatorTesting
 
 # phase codes based on environment.net.xml
@@ -32,6 +34,61 @@ class Simulation:
         self._queue_length_episode = []
         self.server_url = server_url
         self._no_route_file = no_route_file
+        self._vehicle_counter = 0
+        self._active_vehicles = set()
+        self._exited_vehicles = {}
+        self._incoming_vehicles = []
+        
+        # Get road lengths from environment file
+        if env_file_path is None:
+            # Extract agent number from agent_id (e.g., 'agent1' -> '1')
+            agent_num = agent_id.replace('agent', '') if agent_id else '1'
+            env_file_path = f"intersection_{agent_num}/environment.net.xml"
+        else:
+            print(f"Using environment file: {env_file_path}, skipping road length calculation")
+            
+        self._road_lengths = self._get_road_lengths_from_xml(env_file_path)
+        print(f"Using environment file: {env_file_path}")
+        print("Road lengths from XML:", self._road_lengths)
+        
+        # Vehicle spawning parameters
+        self.auto_spawn = True
+        self.spawn_interval = 4
+        self.spawn_interval_random = True
+        self.min_interval = 2
+        self.max_interval = 6
+        self.spawn_count = 5
+        self.spawn_count_random = True
+        self.min_count = 1
+        self.max_count = 8
+        self.last_spawn_step = 0
+        
+        # Vehicle type distribution
+        self.vehicle_types = {
+            "veh_passenger": 70,
+            "veh_bus": 10,
+            "veh_truck": 10,
+            "veh_emergency": 5,
+            "veh_motorcycle": 5
+        }
+        
+        # Route distribution
+        self.route_weights = {
+            "W_N": 15, "W_E": 15, "W_S": 15,
+            "N_W": 15, "N_E": 15, "N_S": 15,
+            "E_N": 15, "E_S": 15, "E_W": 15,
+            "S_N": 15, "S_E": 15, "S_W": 15
+        }
+        
+        # Speed ranges for different vehicle types
+        self.speed_ranges = {
+            "veh_passenger": (3, 8),
+            "veh_bus": (2, 6),
+            "veh_truck": (2, 5),
+            "veh_emergency": (4, 10),
+            "veh_motorcycle": (3, 8)
+        }
+        
         if server_url:
             self.communicator = AgentCommunicatorTesting(server_url, agent_id, mapping_config, env_file_path)
             self.communicator.update_status("initialized")
@@ -46,6 +103,35 @@ class Simulation:
             self.communicator.start_background_sync()
         else:
             self.communicator = None
+
+    def _get_road_lengths_from_xml(self, env_file_path):
+        """Get road lengths from the environment XML file"""
+        if not env_file_path:
+            return {"W2TL": 750, "N2TL": 750, "E2TL": 750, "S2TL": 750}  # Default lengths
+            
+        try:
+            tree = ET.parse(env_file_path)
+            root = tree.getroot()
+            
+            road_lengths = {}
+            for edge in root.findall('.//edge'):
+                edge_id = edge.get('id')
+                if edge_id in ["W2TL", "N2TL", "E2TL", "S2TL"]:
+                    length = float(edge.get('length', '750'))
+                    road_lengths[edge_id] = length
+                    print(f"Found length for {edge_id}: {length}")
+            
+            # Ensure all required roads have lengths
+            for road_id in ["W2TL", "N2TL", "E2TL", "S2TL"]:
+                if road_id not in road_lengths:
+                    road_lengths[road_id] = 750
+                    print(f"Using default length for {road_id}: 750")
+                    
+            return road_lengths
+            
+        except Exception as e:
+            print(f"Error reading XML file: {e}")
+            return {"W2TL": 750, "N2TL": 750, "E2TL": 750, "S2TL": 750}  # Default lengths
 
     def run(self, episode):
         start_time = timeit.default_timer()
@@ -68,6 +154,29 @@ class Simulation:
         old_total_wait = 0
         old_action = -1
         while self._step < self._max_steps:
+            # Handle automatic spawning with random intervals
+            if self._no_route_file and self.auto_spawn:
+                if self.spawn_interval_random:
+                    current_interval = random.randint(self.min_interval, self.max_interval)
+                else:
+                    current_interval = self.spawn_interval
+
+                if (self._step - self.last_spawn_step) >= current_interval:
+                    self.last_spawn_step = self._step
+                    if self.spawn_count_random:
+                        count = random.randint(self.min_count, self.max_count)
+                    else:
+                        count = self.spawn_count
+                    
+                    # Spawn vehicles
+                    for _ in range(count):
+                        self._spawn_random_vehicle()
+                    print(f"Spawned {count} vehicles")
+            
+            # Check for incoming vehicles from other intersections
+            if self.communicator:
+                self._check_incoming_vehicles()
+            
             current_state = self._get_state()
             current_total_wait = self._collect_waiting_times()
             reward = old_total_wait - current_total_wait
@@ -177,30 +286,40 @@ class Simulation:
         state = np.zeros(self._num_states)
         car_list = traci.vehicle.getIDList()
         print("Number of cars:", len(car_list))
+        
         for car_id in car_list:
             lane_pos = traci.vehicle.getLanePosition(car_id)
             lane_id = traci.vehicle.getLaneID(car_id)
-            lane_pos = 750 - lane_pos
-            if lane_pos < 7:
+            
+            # Get the road ID from lane ID (e.g., "W2TL_0" -> "W2TL")
+            road_id = lane_id.split('_')[0]
+            road_length = self._road_lengths.get(road_id, 750)  # Use lengths from XML
+            
+            # Calculate relative position (0 to 1)
+            relative_pos = 1 - (lane_pos / road_length)
+            
+            # Convert to cell number (0-9)
+            if relative_pos < 0.01:
                 lane_cell = 0
-            elif lane_pos < 14:
+            elif relative_pos < 0.02:
                 lane_cell = 1
-            elif lane_pos < 21:
+            elif relative_pos < 0.03:
                 lane_cell = 2
-            elif lane_pos < 28:
+            elif relative_pos < 0.04:
                 lane_cell = 3
-            elif lane_pos < 40:
+            elif relative_pos < 0.05:
                 lane_cell = 4
-            elif lane_pos < 60:
+            elif relative_pos < 0.08:
                 lane_cell = 5
-            elif lane_pos < 100:
+            elif relative_pos < 0.13:
                 lane_cell = 6
-            elif lane_pos < 160:
+            elif relative_pos < 0.21:
                 lane_cell = 7
-            elif lane_pos < 400:
+            elif relative_pos < 0.53:
                 lane_cell = 8
-            elif lane_pos <= 750:
+            else:
                 lane_cell = 9
+                
             if lane_id == "W2TL_0" or lane_id == "W2TL_1" or lane_id == "W2TL_2":
                 lane_group = 0
             elif lane_id == "W2TL_3":
@@ -224,7 +343,7 @@ class Simulation:
                 car_position = int(str(lane_group) + str(lane_cell))
                 if car_position < self._num_states:
                     state[car_position] = 1
-                    print(f"Car {car_id} at position {car_position} in lane {lane_id}")
+                    print(f"Car {car_id} at position {car_position} in lane {lane_id} (relative pos: {relative_pos:.2f})")
         
         print("State shape:", state.shape)
         print("Number of cars in state:", np.sum(state))
@@ -245,6 +364,149 @@ class Simulation:
                     self._green_duration = max(self._green_duration + offset, self._yellow_duration + 5)
                 print(f"Adjusted timing for sync with {target_id}: offset={offset}s, cycle={cycle_time}s, green={self._green_duration}s")
                 break
+
+    def _spawn_random_vehicle(self):
+        """Spawn a random vehicle in the simulation"""
+        try:
+            # Select vehicle type based on distribution
+            vehicle_type = random.choices(
+                list(self.vehicle_types.keys()),
+                weights=list(self.vehicle_types.values())
+            )[0]
+
+            # Select route based on distribution
+            route = random.choices(
+                list(self.route_weights.keys()),
+                weights=list(self.route_weights.values())
+            )[0]
+
+            # Get speed range for vehicle type
+            min_speed, max_speed = self.speed_ranges[vehicle_type]
+            speed = random.uniform(min_speed, max_speed)
+
+            # Create unique vehicle ID using counter and larger random number
+            self._vehicle_counter += 1
+            random_suffix = random.randint(10000, 99999)
+            vehicle_id = f"{vehicle_type}_{route}_{self._vehicle_counter}_{random_suffix}"
+
+            # Add vehicle with proper type and departure time
+            traci.vehicle.add(
+                vehID=vehicle_id,
+                routeID=route,
+                typeID=vehicle_type,
+                departLane="random",
+                departSpeed=str(speed)
+            )
+            print(f"Spawned random vehicle {vehicle_id} of type {vehicle_type} on route {route}")
+        except Exception as e:
+            print(f"Error spawning random vehicle: {e}")
+
+    def _check_incoming_vehicles(self):
+        """Check for and spawn incoming vehicles from other intersections"""
+        if not self.communicator:
+            return
+
+        try:
+            # Get vehicle transfers from the server
+            response = requests.get(f"{self.server_url}/api/vehicle_transfers?agent_id={self.communicator.agent_id}")
+            if response.status_code != 200:
+                print(f"Error getting vehicle transfers: {response.text}")
+                return
+
+            vehicle_transfers = response.json()
+            if not vehicle_transfers:
+                return
+
+            print(f"Received {len(vehicle_transfers)} vehicles to spawn")
+
+            for vehicle_data in vehicle_transfers:
+                try:
+                    # Add to incoming vehicles list with spawn position
+                    entry_road = None
+                    entry_lane = 0
+
+                    # Determine entry road based on exit direction from previous intersection
+                    if vehicle_data.get('exit_direction'):
+                        if vehicle_data['exit_direction'] == 'north':
+                            entry_road = 'S2TL'
+                        elif vehicle_data['exit_direction'] == 'south':
+                            entry_road = 'N2TL'
+                        elif vehicle_data['exit_direction'] == 'east':
+                            entry_road = 'W2TL'
+                        elif vehicle_data['exit_direction'] == 'west':
+                            entry_road = 'E2TL'
+
+                    if entry_road:
+                        # Get the road length
+                        try:
+                            road_length = traci.edge.getLength(entry_road)
+                        except:
+                            road_length = 100.0  # Default length if we can't get it
+
+                        # Add spawn information to vehicle data
+                        vehicle_data['spawn_road'] = entry_road
+                        vehicle_data['spawn_lane'] = entry_lane
+                        vehicle_data['road_length'] = road_length
+
+                        # Add to incoming vehicles list
+                        self._incoming_vehicles.append(vehicle_data)
+
+                except Exception as e:
+                    print(f"Error processing vehicle transfer: {e}")
+
+            # Spawn any incoming vehicles
+            while self._incoming_vehicles:
+                vehicle_data = self._incoming_vehicles.pop(0)
+                try:
+                    # Create route for the vehicle
+                    route_id = f"route_{vehicle_data['vehicle_id']}"
+
+                    # Determine the route edges based on the original route and entry road
+                    route_edges = [vehicle_data['spawn_road']]
+
+                    # Add destination edge based on original route
+                    if 'route' in vehicle_data:
+                        route_parts = vehicle_data['route'].split('_')
+                        if len(route_parts) >= 2:
+                            # Map the route parts to actual edge names
+                            from_dir = route_parts[0]
+                            to_dir = route_parts[1]
+
+                            # Map directions to edge names
+                            edge_map = {
+                                'N': 'TL2N',
+                                'S': 'TL2S',
+                                'E': 'TL2E',
+                                'W': 'TL2W'
+                            }
+
+                            # Add the destination edge if it exists in our map
+                            if to_dir in edge_map:
+                                route_edges.append(edge_map[to_dir])
+                                print(f"Created route {route_id} with edges: {route_edges}")
+
+                    # Add the route
+                    traci.route.add(route_id, route_edges)
+
+                    # Spawn the vehicle using the type from the transfer data
+                    traci.vehicle.add(
+                        vehID=vehicle_data['vehicle_id'],
+                        routeID=route_id,
+                        typeID=vehicle_data['type'],  # Use the type from transfer data
+                        departLane=str(vehicle_data['spawn_lane']),
+                        departSpeed=str(vehicle_data['speed']),
+                        departPos="0"
+                    )
+                    print(f"Spawned transferred vehicle {vehicle_data['vehicle_id']} of type {vehicle_data['type']} on {vehicle_data['spawn_road']} with route {route_id}")
+
+                except Exception as e:
+                    print(f"Error spawning transferred vehicle: {e}")
+                    # Put the vehicle back in the queue if there was an error
+                    self._incoming_vehicles.insert(0, vehicle_data)
+                    break
+
+        except Exception as e:
+            print(f"Error in _check_incoming_vehicles: {e}")
 
     @property
     def queue_length_episode(self):

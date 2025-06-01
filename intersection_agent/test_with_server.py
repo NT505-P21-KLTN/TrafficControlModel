@@ -259,6 +259,7 @@ if __name__ == "__main__":
     parser.add_argument('--server-config', type=str, default='server_config_1.ini')
     parser.add_argument('--phase', type=str, help='Phase to use for model loading (e.g., "base", "sync"). If not specified, will use non-phase model.')
     parser.add_argument('-i', '--interactive', action='store_true', help='Run in interactive testing mode with UI')
+    parser.add_argument('--no-route-file', action='store_true', help='Use no route file for traffic generation')
     args = parser.parse_args()
     
     # Read server configuration first to get agent ID
@@ -360,9 +361,10 @@ if __name__ == "__main__":
         TrafficGen = TrafficGenerator(
             config['max_steps'], 
             config['n_cars_generated'],
-            agent_id
+            agent_id,
+            no_route_file=args.no_route_file
         )
-        Simulation = TestingSimulationWithServer(
+        simulation = TestingSimulationWithServer(
             Model,
             TrafficGen,
             sumo_cmd,
@@ -377,12 +379,12 @@ if __name__ == "__main__":
             env_file_path
         )
         print("----- Testing episode")
-        simulation_time = Simulation.run(config['episode_seed'])
+        simulation_time = simulation.run(config['episode_seed'])
         print("Simulation time:", simulation_time, "s")
-        reward_episode = Simulation.reward_episode
+        reward_episode = simulation.reward_episode
         print("Average reward:", np.mean(reward_episode))
         print("Total reward:", np.sum(reward_episode))
-        queue_length_episode = Simulation.queue_length_episode
+        queue_length_episode = simulation.queue_length_episode
         print("Average queue length:", np.mean(queue_length_episode))
         print("End of testing")
-Simulation.cleanup()
+    simulation.cleanup()

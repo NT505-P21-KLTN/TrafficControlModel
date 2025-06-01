@@ -25,7 +25,7 @@
             <meta name="viewport" content="width=device-width,
                 initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
             <style>
-                #map_1c402c9c25e81215207a07cb99b30d05 {
+                #map_8c27c1722b77eaa9b39fa22dae53019c {
                     position: relative;
                     width: 100.0%;
                     height: 100.0%;
@@ -42,14 +42,14 @@
 <body>
     
     
-            <div class="folium-map" id="map_1c402c9c25e81215207a07cb99b30d05" ></div>
+            <div class="folium-map" id="map_8c27c1722b77eaa9b39fa22dae53019c" ></div>
         
 </body>
 <script>
     
     
-            var map_1c402c9c25e81215207a07cb99b30d05 = L.map(
-                "map_1c402c9c25e81215207a07cb99b30d05",
+            var map_8c27c1722b77eaa9b39fa22dae53019c = L.map(
+                "map_8c27c1722b77eaa9b39fa22dae53019c",
                 {
                     center: [10.777807, 106.681676],
                     crs: L.CRS.EPSG3857,
@@ -66,7 +66,7 @@
 
         
     
-            var tile_layer_dfa7738b46bbd5218cd4b4b2f9d021b3 = L.tileLayer(
+            var tile_layer_586a67ee64cd91e85896668e0d17b469 = L.tileLayer(
                 "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
                 {
   "minZoom": 0,
@@ -83,23 +83,23 @@
             );
         
     
-            tile_layer_dfa7738b46bbd5218cd4b4b2f9d021b3.addTo(map_1c402c9c25e81215207a07cb99b30d05);
+            tile_layer_586a67ee64cd91e85896668e0d17b469.addTo(map_8c27c1722b77eaa9b39fa22dae53019c);
         
     
-            var marker_cluster_e0bb9771c8d019cf1c69aa2bb71c195f = L.markerClusterGroup(
+            var marker_cluster_51ad1d49dee32c650e4bff63840ec9bf = L.markerClusterGroup(
                 {
 }
             );
         
     
-            var marker_bff81945befb1b3a08e6422461df4292 = L.marker(
-                [10.799418, 106.694178],
+            var marker_bea14a071325247a8bd405ec1236ee7a = L.marker(
+                [10.786519, 106.69368],
                 {
 }
-            ).addTo(marker_cluster_e0bb9771c8d019cf1c69aa2bb71c195f);
+            ).addTo(marker_cluster_51ad1d49dee32c650e4bff63840ec9bf);
         
     
-            var icon_9b805d2e76efa3c8ec41635629702f4a = L.AwesomeMarkers.icon(
+            var icon_829563be1ba5d0b1af2049ddb1d2552d = L.AwesomeMarkers.icon(
                 {
   "markerColor": "green",
   "iconColor": "white",
@@ -110,24 +110,72 @@
             );
         
     
-        var popup_b517a10942872c3c2f8655b0a007d868 = L.popup({
+        var popup_88b99b8a71cf147d80d8119627891a35 = L.popup({
   "maxWidth": 250,
 });
 
         
             
-                var html_ead32a8e72722e309ecd780e1319f4ad = $(`<div id="html_ead32a8e72722e309ecd780e1319f4ad" style="width: 100.0%; height: 100.0%;">                     <div style="width: 200px;">                         <h3>Dien Bien Phu - Dinh Tien Hoang</h3>                         <b>Agent ID:</b> agent2<br>                         <b>Status:</b> Online<br>                         <b>Location:</b> 10.799418, 106.694178                     </div>                     </div>`)[0];
-                popup_b517a10942872c3c2f8655b0a007d868.setContent(html_ead32a8e72722e309ecd780e1319f4ad);
+                var html_d7c0d51c25664297d7b19994c74a6810 = $(`<div id="html_d7c0d51c25664297d7b19994c74a6810" style="width: 100.0%; height: 100.0%;">                     <div style="width: 200px;">                         <h3>Dien Bien Phu - Hai Ba Trung</h3>                         <b>Agent ID:</b> agent1<br>                         <b>Status:</b> Online<br>                         <b>Location:</b> 10.786519, 106.693680                     </div>                     </div>`)[0];
+                popup_88b99b8a71cf147d80d8119627891a35.setContent(html_d7c0d51c25664297d7b19994c74a6810);
             
         
 
-        marker_bff81945befb1b3a08e6422461df4292.bindPopup(popup_b517a10942872c3c2f8655b0a007d868)
+        marker_bea14a071325247a8bd405ec1236ee7a.bindPopup(popup_88b99b8a71cf147d80d8119627891a35)
         ;
 
         
     
     
-            marker_bff81945befb1b3a08e6422461df4292.bindTooltip(
+            marker_bea14a071325247a8bd405ec1236ee7a.bindTooltip(
+                `<div>
+                     Dien Bien Phu - Hai Ba Trung
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+                marker_bea14a071325247a8bd405ec1236ee7a.setIcon(icon_829563be1ba5d0b1af2049ddb1d2552d);
+            
+    
+            var marker_a37f959bba19bbfe8e9cd7312fd0e511 = L.marker(
+                [10.799418, 106.694178],
+                {
+}
+            ).addTo(marker_cluster_51ad1d49dee32c650e4bff63840ec9bf);
+        
+    
+            var icon_134643f93822184faa46d16570d82e2b = L.AwesomeMarkers.icon(
+                {
+  "markerColor": "red",
+  "iconColor": "white",
+  "icon": "traffic-light",
+  "prefix": "fa",
+  "extraClasses": "fa-rotate-0",
+}
+            );
+        
+    
+        var popup_3c76b17ba273310178a1fcafdaa12985 = L.popup({
+  "maxWidth": 250,
+});
+
+        
+            
+                var html_f84aef01fced3b928f4182b9254444fb = $(`<div id="html_f84aef01fced3b928f4182b9254444fb" style="width: 100.0%; height: 100.0%;">                     <div style="width: 200px;">                         <h3>Dien Bien Phu - Dinh Tien Hoang</h3>                         <b>Agent ID:</b> agent2<br>                         <b>Status:</b> Offline<br>                         <b>Location:</b> 10.799418, 106.694178                     </div>                     </div>`)[0];
+                popup_3c76b17ba273310178a1fcafdaa12985.setContent(html_f84aef01fced3b928f4182b9254444fb);
+            
+        
+
+        marker_a37f959bba19bbfe8e9cd7312fd0e511.bindPopup(popup_3c76b17ba273310178a1fcafdaa12985)
+        ;
+
+        
+    
+    
+            marker_a37f959bba19bbfe8e9cd7312fd0e511.bindTooltip(
                 `<div>
                      Dien Bien Phu - Dinh Tien Hoang
                  </div>`,
@@ -137,10 +185,106 @@
             );
         
     
-                marker_bff81945befb1b3a08e6422461df4292.setIcon(icon_9b805d2e76efa3c8ec41635629702f4a);
+                marker_a37f959bba19bbfe8e9cd7312fd0e511.setIcon(icon_134643f93822184faa46d16570d82e2b);
             
     
-            marker_cluster_e0bb9771c8d019cf1c69aa2bb71c195f.addTo(map_1c402c9c25e81215207a07cb99b30d05);
+            var marker_8723dadb64404aa1869ee648872626ba = L.marker(
+                [10.782851, 106.698079],
+                {
+}
+            ).addTo(marker_cluster_51ad1d49dee32c650e4bff63840ec9bf);
+        
+    
+            var icon_3f47de6adc85d6955c0035a768a21121 = L.AwesomeMarkers.icon(
+                {
+  "markerColor": "red",
+  "iconColor": "white",
+  "icon": "traffic-light",
+  "prefix": "fa",
+  "extraClasses": "fa-rotate-0",
+}
+            );
+        
+    
+        var popup_3b26f2ac7f47aa7c248aa97521b389cd = L.popup({
+  "maxWidth": 250,
+});
+
+        
+            
+                var html_88eca695e69f417b2909c71715c7e3c1 = $(`<div id="html_88eca695e69f417b2909c71715c7e3c1" style="width: 100.0%; height: 100.0%;">                     <div style="width: 200px;">                         <h3>Hai Ba Trung - Nguyen Thi Minh Khai</h3>                         <b>Agent ID:</b> agent3<br>                         <b>Status:</b> Offline<br>                         <b>Location:</b> 10.782851, 106.698079                     </div>                     </div>`)[0];
+                popup_3b26f2ac7f47aa7c248aa97521b389cd.setContent(html_88eca695e69f417b2909c71715c7e3c1);
+            
+        
+
+        marker_8723dadb64404aa1869ee648872626ba.bindPopup(popup_3b26f2ac7f47aa7c248aa97521b389cd)
+        ;
+
+        
+    
+    
+            marker_8723dadb64404aa1869ee648872626ba.bindTooltip(
+                `<div>
+                     Hai Ba Trung - Nguyen Thi Minh Khai
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+                marker_8723dadb64404aa1869ee648872626ba.setIcon(icon_3f47de6adc85d6955c0035a768a21121);
+            
+    
+            var marker_b53c8b4f58e314da1f96235bbca0a9d4 = L.marker(
+                [10.78675, 106.701765],
+                {
+}
+            ).addTo(marker_cluster_51ad1d49dee32c650e4bff63840ec9bf);
+        
+    
+            var icon_2b5df129546b5719c1bd882ca15501fa = L.AwesomeMarkers.icon(
+                {
+  "markerColor": "red",
+  "iconColor": "white",
+  "icon": "traffic-light",
+  "prefix": "fa",
+  "extraClasses": "fa-rotate-0",
+}
+            );
+        
+    
+        var popup_d4723d805c6553d6e7c6fa5b4e0067b1 = L.popup({
+  "maxWidth": 250,
+});
+
+        
+            
+                var html_e309a1a8d5bd29f07035bc7c5196b634 = $(`<div id="html_e309a1a8d5bd29f07035bc7c5196b634" style="width: 100.0%; height: 100.0%;">                     <div style="width: 200px;">                         <h3>Nguyen Thi Minh Khai - Dinh Tien Hoang</h3>                         <b>Agent ID:</b> agent4<br>                         <b>Status:</b> Offline<br>                         <b>Location:</b> 10.786750, 106.701765                     </div>                     </div>`)[0];
+                popup_d4723d805c6553d6e7c6fa5b4e0067b1.setContent(html_e309a1a8d5bd29f07035bc7c5196b634);
+            
+        
+
+        marker_b53c8b4f58e314da1f96235bbca0a9d4.bindPopup(popup_d4723d805c6553d6e7c6fa5b4e0067b1)
+        ;
+
+        
+    
+    
+            marker_b53c8b4f58e314da1f96235bbca0a9d4.bindTooltip(
+                `<div>
+                     Nguyen Thi Minh Khai - Dinh Tien Hoang
+                 </div>`,
+                {
+  "sticky": true,
+}
+            );
+        
+    
+                marker_b53c8b4f58e314da1f96235bbca0a9d4.setIcon(icon_2b5df129546b5719c1bd882ca15501fa);
+            
+    
+            marker_cluster_51ad1d49dee32c650e4bff63840ec9bf.addTo(map_8c27c1722b77eaa9b39fa22dae53019c);
         
 </script>
 </html>
