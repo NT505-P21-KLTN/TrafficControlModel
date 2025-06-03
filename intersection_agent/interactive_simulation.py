@@ -336,6 +336,7 @@ class InteractiveSimulation(QObject):
                     self.stats_updated.emit(self.get_statistics())
                     self.cumulative_stats_updated.emit(self.get_cumulative_statistics())
 
+                    print(f"Tracking vehicles for 123 {self._agent_id}")
                     self._track_vehicles()
                     self._check_incoming_vehicles()
 
@@ -585,10 +586,9 @@ class InteractiveSimulation(QObject):
             traci.trafficlight.setPhaseDuration("TL", self._green_duration)
 
     def _track_vehicles(self):
+        print(f"Tracking vehicles for {self._agent_id}")
         """Track vehicles that enter and exit the simulation"""
         if not traci.isLoaded():
-            return
-        if not self.auto_spawn:
             return
 
         try:
@@ -596,7 +596,7 @@ class InteractiveSimulation(QObject):
             current_vehicles = set(traci.vehicle.getIDList())
             
             # Define boundary detection points (in meters from intersection)
-            boundary_distance = 50.0  # 50 meters from intersection
+            boundary_distance = 20.0  # 50 meters from intersection
             
             # Check each vehicle's position
             for vehicle_id in current_vehicles:
@@ -675,8 +675,9 @@ class InteractiveSimulation(QObject):
                                     })
                                     print(f"Sent vehicle {vehicle_id} to agent {destination_agent}")
                                     
-                                    # Emit signal for UI update
-                                    self.vehicle_updated.emit(transfer_data)
+                                    # Emit signal for UI update if in interactive mode
+                                    if hasattr(self, 'vehicle_updated'):
+                                        self.vehicle_updated.emit(transfer_data)
                             
                 except traci.exceptions.TraCIException:
                     # Vehicle is no longer in simulation, skip it

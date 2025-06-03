@@ -153,7 +153,25 @@ class Simulation:
         old_total_wait = 0
         old_action = -1
         while self._step < self._max_steps:
-            # Check for incoming vehicles from other intersections if we have a communicator
+            # Handle automatic spawning with random intervals
+            if self.auto_spawn:
+                if self.spawn_interval_random:
+                    current_interval = random.randint(self.min_interval, self.max_interval)
+                else:
+                    current_interval = self.spawn_interval
+
+                if (self._step - self.last_spawn_step) >= current_interval:
+                    self.last_spawn_step = self._step
+                    if self.spawn_count_random:
+                        count = random.randint(self.min_count, self.max_count)
+                    else:
+                        count = self.spawn_count
+                    for _ in range(count):
+                        self._spawn_random_vehicle()
+                    print(f"Spawned {count} vehicles")
+
+            # Track vehicles and check for incoming vehicles
+            self._track_vehicles()
             if self.communicator:
                 self._check_incoming_vehicles()
             
@@ -387,6 +405,7 @@ class Simulation:
             return
 
         try:
+            print(f"Checking for incoming vehicles to {self.communicator.agent_id}")
             # Get vehicle transfers from the server
             response = requests.get(f"{self.server_url}/api/vehicle_transfers?agent_id={self.communicator.agent_id}")
             if response.status_code != 200:
@@ -465,19 +484,35 @@ class Simulation:
                                 route_edges.append(edge_map[to_dir])
                                 print(f"Created route {route_id} with edges: {route_edges}")
 
-                    # Add the route
-                    traci.route.add(route_id, route_edges)
+                    # Check if route already exists
+                    try:
+                        traci.route.getIDList()
+                        if route_id in traci.route.getIDList():
+                            print(f"Route {route_id} already exists, skipping creation")
+                        else:
+                            # Add the route
+                            traci.route.add(route_id, route_edges)
+                            print(f"Added new route {route_id} with edges: {route_edges}")
+                    except Exception as e:
+                        print(f"Error checking/adding route {route_id}: {e}")
+                        continue
 
                     # Spawn the vehicle using the type from the transfer data
-                    traci.vehicle.add(
-                        vehID=vehicle_data['vehicle_id'],
-                        routeID=route_id,
-                        typeID=vehicle_data['type'],  # Use the type from transfer data
-                        departLane=str(vehicle_data['spawn_lane']),
-                        departSpeed=str(vehicle_data['speed']),
-                        departPos="0"
-                    )
-                    print(f"Spawned transferred vehicle {vehicle_data['vehicle_id']} of type {vehicle_data['type']} on {vehicle_data['spawn_road']} with route {route_id}")
+                    try:
+                        traci.vehicle.add(
+                            vehID=vehicle_data['vehicle_id'],
+                            routeID=route_id,
+                            typeID=vehicle_data['type'],  # Use the type from transfer data
+                            departLane=str(vehicle_data['spawn_lane']),
+                            departSpeed=str(vehicle_data['speed']),
+                            departPos="0"
+                        )
+                        print(f"Spawned transferred vehicle {vehicle_data['vehicle_id']} of type {vehicle_data['type']} on {vehicle_data['spawn_road']} with route {route_id}")
+                    except Exception as e:
+                        print(f"Error spawning vehicle {vehicle_data['vehicle_id']}: {e}")
+                        # Put the vehicle back in the queue if there was an error
+                        self._incoming_vehicles.insert(0, vehicle_data)
+                        break
 
                 except Exception as e:
                     print(f"Error spawning transferred vehicle: {e}")
@@ -487,6 +522,113 @@ class Simulation:
 
         except Exception as e:
             print(f"Error in _check_incoming_vehicles: {e}")
+
+    def _track_vehicles(self):
+        """Track vehicles that enter and exit the simulation"""
+        if not traci.isLoaded():
+            return
+
+        try:
+            # Get current vehicles
+            current_vehicles = set(traci.vehicle.getIDList())
+            
+            # Define boundary detection points (in meters from intersection)
+            boundary_distance = 20.0  # 50 meters from intersection
+            
+            # Check each vehicle's position
+            for vehicle_id in current_vehicles:
+                try:
+                    # Skip if vehicle is already being tracked for exit
+                    if vehicle_id in self._exited_vehicles:
+                        continue
+                    # Get vehicle's current road and position
+                    current_road = traci.vehicle.getRoadID(vehicle_id)
+                    current_position = traci.vehicle.getLanePosition(vehicle_id)
+                    
+                    # Check if vehicle is on an exit road and approaching the boundary
+                    if current_road in ["TL2N", "TL2S", "TL2E", "TL2W"]:
+                        # Check if vehicle is near the boundary point
+                        if current_position >= boundary_distance:
+                            # Get vehicle details
+                            vehicle_type = traci.vehicle.getTypeID(vehicle_id)
+                            route = traci.vehicle.getRouteID(vehicle_id)
+                            speed = traci.vehicle.getSpeed(vehicle_id)
+                            lane = traci.vehicle.getLaneIndex(vehicle_id)
+                            position = traci.vehicle.getPosition(vehicle_id)
+                            waiting_time = traci.vehicle.getAccumulatedWaitingTime(vehicle_id)
+                            
+                            # Determine exit direction and destination agent based on road
+                            exit_direction = None
+                            destination_agent = None
+                            
+                            if current_road == 'TL2N':
+                                exit_direction = 'north'
+                                destination_agent = 'agent2'  # Default to agent2 for north
+                            elif current_road == 'TL2S':
+                                exit_direction = 'south'
+                                destination_agent = 'agent3'  # Default to agent3 for south
+                            elif current_road == 'TL2E':
+                                exit_direction = 'east'
+                                destination_agent = 'agent4'  # Default to agent4 for east
+                            elif current_road == 'TL2W':
+                                exit_direction = 'west'
+                                destination_agent = 'agent1'  # Default to agent1 for west
+
+                            # Only proceed if we have both exit direction and destination
+                            if exit_direction and destination_agent:
+                                # Store vehicle info
+                                self._exited_vehicles[vehicle_id] = {
+                                    'type': vehicle_type,
+                                    'route': route,
+                                    'speed': speed,
+                                    'lane': lane,
+                                    'position': position,
+                                    'waiting_time': waiting_time,
+                                    'is_boundary_exit': True,
+                                    'exit_direction': exit_direction,
+                                    'destination': destination_agent,
+                                    'timestamp': time.time()
+                                }
+                                
+                                # Send vehicle info to server if connected
+                                if self.communicator:
+                                    transfer_data = {
+                                        'vehicle_id': vehicle_id,
+                                        'type': vehicle_type,
+                                        'route': route,
+                                        'speed': speed,
+                                        'lane': lane,
+                                        'position': position,
+                                        'waiting_time': waiting_time,
+                                        'exit_direction': exit_direction,
+                                        'from_agent': self.communicator.agent_id,
+                                        'to_agent': destination_agent,
+                                        'timestamp': time.time()
+                                    }
+                                    
+                                    # Send state update with vehicle transfer data
+                                    self.communicator.send_state(None, self._step, {
+                                        'vehicle_transfer': transfer_data
+                                    })
+                                    print(f"Sent vehicle {vehicle_id} to agent {destination_agent}")
+                            
+                except traci.exceptions.TraCIException:
+                    # Vehicle is no longer in simulation, skip it
+                    continue
+                except Exception as e:
+                    print(f"Error tracking vehicle {vehicle_id}: {e}")
+            
+            # Find vehicles that have actually exited
+            exited = self._active_vehicles - current_vehicles
+            for vehicle_id in exited:
+                # Remove from active vehicles
+                self._active_vehicles.discard(vehicle_id)
+            
+            # Update active vehicles
+            self._active_vehicles = current_vehicles
+            
+        except Exception as e:
+            print(f"Error in _track_vehicles: {e}")
 
     @property
     def queue_length_episode(self):
