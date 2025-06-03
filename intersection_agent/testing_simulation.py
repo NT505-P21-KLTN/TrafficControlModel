@@ -33,6 +33,7 @@ class Simulation:
         self._reward_episode = []
         self._queue_length_episode = []
         self.server_url = server_url
+        self._agent_id = agent_id  # Store agent_id
         self._no_route_file = no_route_file
         self._vehicle_counter = 0
         self._active_vehicles = set()
@@ -42,7 +43,7 @@ class Simulation:
         # Get road lengths from environment file
         if env_file_path is None:
             # Extract agent number from agent_id (e.g., 'agent1' -> '1')
-            agent_num = agent_id.replace('agent', '') if agent_id else '1'
+            agent_num = self._agent_id.replace('agent', '') if self._agent_id else '1'
             env_file_path = f"intersection_{agent_num}/environment.net.xml"
         else:
             print(f"Using environment file: {env_file_path}, skipping road length calculation")
@@ -50,6 +51,7 @@ class Simulation:
         self._road_lengths = self._get_road_lengths_from_xml(env_file_path)
         print(f"Using environment file: {env_file_path}")
         print("Road lengths from XML:", self._road_lengths)
+        print(f"Agent ID: {self._agent_id}")  # Print agent ID for debugging
         
         # Vehicle spawning parameters
         self.auto_spawn = True
@@ -341,12 +343,43 @@ class Simulation:
                 car_position = int(str(lane_group) + str(lane_cell))
                 if car_position < self._num_states:
                     state[car_position] = 1
-                    # print(f"Car {car_id} at position {car_position} in lane {lane_id} (relative pos: {relative_pos:.2f})")
         
         print("State shape:", state.shape)
         print("Number of cars in state:", np.sum(state))
+        
         if self.communicator:
-            self.communicator.send_state(state.tolist(), self._step)
+            # Create traffic data dictionary
+            traffic_data = {
+                'queue_length': self._get_queue_length(),
+                'current_phase': traci.trafficlight.getPhase("TL"),
+                'incoming_vehicles': {
+                    'N': traci.edge.getLastStepVehicleNumber("N2TL"),
+                    'S': traci.edge.getLastStepVehicleNumber("S2TL"),
+                    'E': traci.edge.getLastStepVehicleNumber("E2TL"),
+                    'W': traci.edge.getLastStepVehicleNumber("W2TL")
+                },
+                'avg_speed': {
+                    'N': traci.edge.getLastStepMeanSpeed("N2TL"),
+                    'S': traci.edge.getLastStepMeanSpeed("S2TL"),
+                    'E': traci.edge.getLastStepMeanSpeed("E2TL"),
+                    'W': traci.edge.getLastStepMeanSpeed("W2TL")
+                }
+            }
+            
+            try:
+                # Convert state to list format
+                if isinstance(state, np.ndarray):
+                    state_list = state.tolist()
+                else:
+                    state_list = list(state)  # Convert to list if it's not a numpy array
+                
+                # Send state to server
+                self.communicator.send_state(state_list, self._step, traffic_data)
+            except Exception as e:
+                print(f"Error in send_state: {e}")
+                print(f"State type: {type(state_list)}")
+                print(f"State content: {state_list}")
+                
         return state
 
     def _adjust_timing(self, sync_data):
@@ -405,9 +438,9 @@ class Simulation:
             return
 
         try:
-            print(f"Checking for incoming vehicles to {self.communicator.agent_id}")
+            print(f"Checking for incoming vehicles to {self._agent_id}")
             # Get vehicle transfers from the server
-            response = requests.get(f"{self.server_url}/api/vehicle_transfers?agent_id={self.communicator.agent_id}")
+            response = requests.get(f"{self._server_url}/api/vehicle_transfers?agent_id={self._agent_id}")
             if response.status_code != 200:
                 print(f"Error getting vehicle transfers: {response.text}")
                 return
@@ -484,35 +517,45 @@ class Simulation:
                                 route_edges.append(edge_map[to_dir])
                                 print(f"Created route {route_id} with edges: {route_edges}")
 
-                    # Check if route already exists
-                    try:
-                        traci.route.getIDList()
-                        if route_id in traci.route.getIDList():
-                            print(f"Route {route_id} already exists, skipping creation")
-                        else:
-                            # Add the route
-                            traci.route.add(route_id, route_edges)
-                            print(f"Added new route {route_id} with edges: {route_edges}")
-                    except Exception as e:
-                        print(f"Error checking/adding route {route_id}: {e}")
-                        continue
+                    # Add the route
+                    traci.route.add(route_id, route_edges)
 
                     # Spawn the vehicle using the type from the transfer data
+                    traci.vehicle.add(
+                        vehID=vehicle_data['vehicle_id'],
+                        routeID=route_id,
+                        typeID=vehicle_data['type'],  # Use the type from transfer data
+                        departLane=str(vehicle_data['spawn_lane']),
+                        departSpeed=str(vehicle_data['speed']),
+                        departPos="0"
+                    )
+                    print(f"Spawned transferred vehicle {vehicle_data['vehicle_id']} of type {vehicle_data['type']} on {vehicle_data['spawn_road']} with route {route_id}")
+
+                    # Delete the vehicle transfer from the server after successful spawning
                     try:
-                        traci.vehicle.add(
-                            vehID=vehicle_data['vehicle_id'],
-                            routeID=route_id,
-                            typeID=vehicle_data['type'],  # Use the type from transfer data
-                            departLane=str(vehicle_data['spawn_lane']),
-                            departSpeed=str(vehicle_data['speed']),
-                            departPos="0"
-                        )
-                        print(f"Spawned transferred vehicle {vehicle_data['vehicle_id']} of type {vehicle_data['type']} on {vehicle_data['spawn_road']} with route {route_id}")
+                        delete_url = f"{self._server_url}/api/vehicle_transfer/{vehicle_data['vehicle_id']}"
+                        print(f"Attempting to delete vehicle transfer at URL: {delete_url}")
+                        
+                        delete_response = requests.delete(delete_url)
+                        print(f"Delete response status code: {delete_response.status_code}")
+                        print(f"Delete response content: {delete_response.text}")
+                        
+                        if delete_response.status_code == 200:
+                            print(f"Successfully deleted vehicle transfer for {vehicle_data['vehicle_id']}")
+                        else:
+                            print(f"Failed to delete vehicle transfer for {vehicle_data['vehicle_id']}: {delete_response.text}")
+                            # Try alternative deletion endpoint
+                            alt_delete_url = f"{self._server_url}/api/vehicle_transfers/{vehicle_data['vehicle_id']}"
+                            print(f"Trying alternative deletion URL: {alt_delete_url}")
+                            alt_delete_response = requests.delete(alt_delete_url)
+                            if alt_delete_response.status_code == 200:
+                                print(f"Successfully deleted vehicle transfer using alternative endpoint")
+                            else:
+                                print(f"Failed to delete using alternative endpoint: {alt_delete_response.text}")
                     except Exception as e:
-                        print(f"Error spawning vehicle {vehicle_data['vehicle_id']}: {e}")
-                        # Put the vehicle back in the queue if there was an error
-                        self._incoming_vehicles.insert(0, vehicle_data)
-                        break
+                        print(f"Error deleting vehicle transfer: {e}")
+                        print(f"Error type: {type(e)}")
+                        print(f"Error details: {str(e)}")
 
                 except Exception as e:
                     print(f"Error spawning transferred vehicle: {e}")

@@ -45,6 +45,8 @@ class InteractiveSimulation(QObject):
         self._reward_episode = []
         self._queue_length_episode = []
         self._vehicle_counter = 0
+        self._mapping_config = mapping_config  # Store mapping_config
+        self._env_file_path = env_file_path
 
         # Add vehicle tracking
         self._active_vehicles = set()  # Track vehicles currently in simulation
@@ -449,16 +451,39 @@ class InteractiveSimulation(QObject):
             if not self.auto_spawn:
                 return
 
+            # Get connected directions from mapping config
+            connected_directions = set()
+            if hasattr(self, '_mapping_config') and self._mapping_config and 'map' in self._mapping_config:
+                for connection in self._mapping_config['map'].get('connected_to', []):
+                    if '_' in connection:
+                        direction = connection.split('_')[1].lower()
+                        # Take only the first character of the direction
+                        connected_directions.add(direction[0])
+                print(f"Connected directions (first char): {connected_directions}")
+
+            # Filter route weights to only include unconnected directions
+            available_routes = {}
+            for route, weight in self.route_weights.items():
+                from_dir = route.split('_')[0]
+                # Compare only the first character
+                if from_dir[0].lower() not in connected_directions:
+                    available_routes[route] = weight
+
+            if not available_routes:
+                print("No available spawn directions - all directions are connected to other intersections")
+                return
+            print(f"Available routes: {available_routes}")
+
             # Select vehicle type based on distribution
             vehicle_type = random.choices(
                 list(self.vehicle_types.keys()),
                 weights=list(self.vehicle_types.values())
             )[0]
 
-            # Select route based on distribution
+            # Select route based on filtered distribution
             route = random.choices(
-                list(self.route_weights.keys()),
-                weights=list(self.route_weights.values())
+                list(available_routes.keys()),
+                weights=list(available_routes.values())
             )[0]
 
             # Get speed range for vehicle type
@@ -478,8 +503,11 @@ class InteractiveSimulation(QObject):
                 departLane="random",
                 departSpeed=str(speed)
             )
+            print(f"Spawned random vehicle {vehicle_id} of type {vehicle_type} on route {route} from unconnected direction")
         except Exception as e:
             print(f"[SPAWN] Error spawning random vehicle: {e}")
+            print(f"Error type: {type(e)}")
+            print(f"Error details: {str(e)}")
 
     def _get_state(self):
         """

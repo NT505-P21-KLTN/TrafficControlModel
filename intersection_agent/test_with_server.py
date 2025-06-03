@@ -121,14 +121,20 @@ def read_server_config(config_file='server_config_2.ini'):
 class TestingSimulationWithServer(Simulation):
     def __init__(self, Model, TrafficGen, sumo_cmd, max_steps, green_duration, 
                  yellow_duration, num_states, num_actions, server_url=None, agent_id=None,
-                 mapping_config=None, env_file_path=None):
-        # Call the parent constructor
+                 mapping_config=None, env_file_path=None, no_route_file=False):
+        # Call the parent constructor with all parameters
         super().__init__(Model, TrafficGen, sumo_cmd, max_steps, green_duration, 
-                         yellow_duration, num_states, num_actions)
+                         yellow_duration, num_states, num_actions, server_url, agent_id,
+                         mapping_config, env_file_path, no_route_file)
         
         # Initialize server communication if URL is provided
         self._server_url = server_url
-        self._agent_id = agent_id
+        self._agent_id = agent_id  # Store agent_id again for clarity
+        
+        # Disable auto spawn if no_route_file is True
+        if no_route_file:
+            self.auto_spawn = False
+            print(f"Auto spawn disabled due to -n flag for agent {self._agent_id}")
         
         if server_url:
             self._communicator = AgentCommunicatorTesting(server_url, agent_id, mapping_config, env_file_path)
@@ -478,6 +484,31 @@ class TestingSimulationWithServer(Simulation):
                     )
                     print(f"Spawned transferred vehicle {vehicle_data['vehicle_id']} of type {vehicle_data['type']} on {vehicle_data['spawn_road']} with route {route_id}")
 
+                    try:
+                        delete_url = f"{self._server_url}/api/vehicle_transfer/{vehicle_data['vehicle_id']}"
+                        print(f"Attempting to delete vehicle transfer at URL: {delete_url}")
+                        
+                        delete_response = requests.delete(delete_url)
+                        print(f"Delete response status code: {delete_response.status_code}")
+                        print(f"Delete response content: {delete_response.text}")
+                        
+                        if delete_response.status_code == 200:
+                            print(f"Successfully deleted vehicle transfer for {vehicle_data['vehicle_id']}")
+                        else:
+                            print(f"Failed to delete vehicle transfer for {vehicle_data['vehicle_id']}: {delete_response.text}")
+                            # Try alternative deletion endpoint
+                            alt_delete_url = f"{self._server_url}/api/vehicle_transfers/{vehicle_data['vehicle_id']}"
+                            print(f"Trying alternative deletion URL: {alt_delete_url}")
+                            alt_delete_response = requests.delete(alt_delete_url)
+                            if alt_delete_response.status_code == 200:
+                                print(f"Successfully deleted vehicle transfer using alternative endpoint")
+                            else:
+                                print(f"Failed to delete using alternative endpoint: {alt_delete_response.text}")
+                    except Exception as e:
+                        print(f"Error deleting vehicle transfer: {e}")
+                        print(f"Error type: {type(e)}")
+                        print(f"Error details: {str(e)}")
+
                 except Exception as e:
                     print(f"Error spawning transferred vehicle: {e}")
                     # Put the vehicle back in the queue if there was an error
@@ -618,7 +649,8 @@ if __name__ == "__main__":
             server_url,
             agent_id,
             mapping_config,
-            env_file_path
+            env_file_path,
+            args.no_route_file
         )
         print("----- Testing episode")
         simulation_time = simulation.run(config['episode_seed'])
