@@ -62,7 +62,8 @@ class TrainModel:
         """
         Train the nn using the updated q-values
         """
-        self._model.fit(states, q_sa, epochs=1, verbose=0)
+        history = self._model.fit(states, q_sa, epochs=1, verbose=0)
+        return history.history['loss'][0]
 
 
     def save_model(self, path, phase='base', model_name=None):

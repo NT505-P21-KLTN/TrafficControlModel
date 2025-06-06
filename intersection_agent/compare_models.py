@@ -188,9 +188,9 @@ def train_and_evaluate(config_file, model_name, comparison_dir):
         for episode in range(config['total_episodes']):
             print(f"\nEpisode {episode + 1}/{config['total_episodes']} - Using config: {config_file}")
             epsilon = 1.0
-            sim.run(episode, epsilon)
+            sim_time, train_time, loss = sim.run(episode, epsilon)
             training_history['reward'].append(float(sim.reward_store[-1]))
-            training_history['loss'].append(0)  # placeholder
+            training_history['loss'].append(float(loss))
             training_history['waiting_time'].append(float(np.mean(sim.cumulative_wait_store)))
             training_history['queue_length'].append(float(np.mean(sim.avg_queue_length_store)))
             
@@ -236,6 +236,8 @@ def train_and_evaluate(config_file, model_name, comparison_dir):
             'training_time': training_time
         }
 
+        Model.save_model(comparison_dir, phase=model_name)
+
         return training_history, evaluation_results, metrics_history
         
     except Exception as e:
@@ -245,13 +247,18 @@ def train_and_evaluate(config_file, model_name, comparison_dir):
         # Clean up resources
         cleanup_resources()
 
-def plot_comparison(histories, model_names, comparison_dir):
+def moving_average(data, window_size=5):
+    if len(data) < window_size:
+        return data
+    return np.convolve(data, np.ones(window_size)/window_size, mode='valid')
+
+def plot_comparison(histories, model_names, comparison_dir, smooth_window=10):
     plt.figure(figsize=(15, 12))
     
     # Plot training loss
     plt.subplot(3, 2, 1)
     for history, name in zip(histories, model_names):
-        plt.plot(history['loss'], label=name)
+        plt.plot(moving_average(history['loss'], smooth_window), label=name)
     plt.title('Training Loss Comparison')
     plt.xlabel('Episode')
     plt.ylabel('Loss')
@@ -260,7 +267,7 @@ def plot_comparison(histories, model_names, comparison_dir):
     # Plot reward
     plt.subplot(3, 2, 2)
     for history, name in zip(histories, model_names):
-        plt.plot(history['reward'], label=name)
+        plt.plot(moving_average(history['reward'], smooth_window), label=name)
     plt.title('Reward Comparison')
     plt.xlabel('Episode')
     plt.ylabel('Reward')
@@ -269,7 +276,7 @@ def plot_comparison(histories, model_names, comparison_dir):
     # Plot waiting time
     plt.subplot(3, 2, 3)
     for history, name in zip(histories, model_names):
-        plt.plot(history['waiting_time'], label=name)
+        plt.plot(moving_average(history['waiting_time'], smooth_window), label=name)
     plt.title('Waiting Time Comparison')
     plt.xlabel('Episode')
     plt.ylabel('Waiting Time (s)')
@@ -278,7 +285,7 @@ def plot_comparison(histories, model_names, comparison_dir):
     # Plot queue length
     plt.subplot(3, 2, 4)
     for history, name in zip(histories, model_names):
-        plt.plot(history['queue_length'], label=name)
+        plt.plot(moving_average(history['queue_length'], smooth_window), label=name)
     plt.title('Queue Length Comparison')
     plt.xlabel('Episode')
     plt.ylabel('Queue Length')
@@ -300,11 +307,10 @@ def plot_comparison(histories, model_names, comparison_dir):
 def regenerate_results(comparison_dir):
     """Regenerate comparison results from existing training history and system metric files"""
     try:
-        comparison_dir = "comparison_results/comparison_20250605_214330"
         print(f"Regenerating results from directory: {comparison_dir}")
         
         # Find all training history files
-        history_files = [f for f in os.listdir(comparison_dir) if f.startswith('training_history_') and f.endswith('.json')]
+        history_files = [f for f in os.listdir(comparison_dir) if f.startswith('training_history_') and f.endswith('.json') and '_intermediate' not in f]
         model_names = [f.replace('training_history_', '').replace('.json', '') for f in history_files]
         
         histories = []
@@ -321,9 +327,9 @@ def regenerate_results(comparison_dir):
             
             # Create results dictionary
             result = {
-                'rewards': history['reward'],
-                'waiting_times': history['waiting_time'],
-                'queue_lengths': history['queue_length'],
+                'rewards': history.get('reward', []),
+                'waiting_times': history.get('waiting_time', []),
+                'queue_lengths': history.get('queue_length', []),
                 'training_time': history.get('training_time', 0)
             }
             results.append(result)
@@ -392,14 +398,17 @@ def main():
             'training_settings_1.ini',  # Conservative
             'training_settings_2.ini',  # Aggressive
             'training_settings_3.ini',  # Balanced
-            # 'training_settings_4.ini',  # High Traffic
-            # 'training_settings_5.ini'   # Low Traffic
+            'training_settings_4.ini',  # High Traffic
+            'training_settings_5.ini'   # Low Traffic
         ]
         
         model_names = [
             'baseline',
             'conservative',
             'aggressive',
+            'balanced',
+            'high_traffic',
+            'low_traffic'
         ]
         current_model_names = model_names
         histories = []
