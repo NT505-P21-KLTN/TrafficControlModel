@@ -434,7 +434,7 @@ def main():
         ]
         
         model_names = [
-            'baseline',
+            'original_batch_and_lr',
             'balanced',
             'aggressive',
             'high_traffic',
