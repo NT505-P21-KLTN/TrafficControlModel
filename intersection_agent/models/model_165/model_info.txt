@@ -1,0 +1,9 @@
+Model Information
+================
+Phase: base
+Model file: trained_model_base.h5
+Intersection ID: 1
+Environment folder: intersection_1/
+Config file: training_settings.ini
+Server config: server_config_1.ini
+Saved on: 2025-06-07 12:56:21.473905

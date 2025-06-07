@@ -1,0 +1,22 @@
+{
+    "baseline": {
+        "avg_reward": -38327.92,
+        "avg_waiting_time": 51987.63070322239,
+        "avg_queue_length": 9.627339019115256
+    },
+    "original": {
+        "avg_reward": -38139.57,
+        "avg_waiting_time": 54681.60150351219,
+        "avg_queue_length": 10.126222500650407
+    },
+    "conservative": {
+        "avg_reward": -38278.82,
+        "avg_waiting_time": 52782.09585349161,
+        "avg_queue_length": 9.77446219509104
+    },
+    "aggressive": {
+        "avg_reward": -38197.613333333335,
+        "avg_waiting_time": 51346.47955649972,
+        "avg_queue_length": 9.508607325277726
+    }
+}
