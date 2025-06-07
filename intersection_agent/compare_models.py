@@ -13,7 +13,9 @@ import gc
 import psutil
 import signal
 import sys
+import traci
 from collections import defaultdict
+import tensorflow as tf
 
 # Global variables for saving state
 current_results = {}
@@ -21,6 +23,8 @@ current_metrics = defaultdict(list)
 current_histories = []
 current_model_names = []
 comparison_dir = None
+
+print("Num GPUs Available: ", len(tf.config.list_physical_devices('GPU')))
 
 def signal_handler(signum, frame):
     """Handle interrupt signals to save results before exit"""
@@ -83,6 +87,13 @@ def get_memory_usage():
 
 def cleanup_resources():
     """Clean up resources and force garbage collection"""
+    # Close TraCI connection if it exists
+    try:
+        if traci.isLoaded():
+            traci.close()
+    except Exception:
+        pass
+    
     gc.collect()
     plt.close('all')
     # Clear any remaining matplotlib figures
@@ -94,7 +105,7 @@ def get_system_metrics():
     process = psutil.Process(os.getpid())
     return {
         'memory_mb': process.memory_info().rss / 1024 / 1024,
-        'cpu_percent': process.cpu_percent(),
+        'cpu_percent': process.cpu_percent(interval=0.1),
         'timestamp': time.time()
     }
 
@@ -154,7 +165,9 @@ def train_and_evaluate(config_file, model_name, comparison_dir):
         )
         TrafficGen = TrafficGenerator(
             config['max_steps'],
-            config['n_cars_generated']
+            config['n_cars_generated'],
+            intersection_id=1,
+            disable_external_filtering=True
         )
         sumo_cmd = set_sumo(
             config['gui'],
@@ -188,32 +201,36 @@ def train_and_evaluate(config_file, model_name, comparison_dir):
         for episode in range(config['total_episodes']):
             print(f"\nEpisode {episode + 1}/{config['total_episodes']} - Using config: {config_file}")
             epsilon = 1.0
-            sim_time, train_time, loss = sim.run(episode, epsilon)
-            training_history['reward'].append(float(sim.reward_store[-1]))
-            training_history['loss'].append(float(loss))
-            training_history['waiting_time'].append(float(np.mean(sim.cumulative_wait_store)))
-            training_history['queue_length'].append(float(np.mean(sim.avg_queue_length_store)))
-            
-            # Record system metrics
-            metrics_history.append(get_system_metrics())
-            
-            # Save intermediate results every 10 episodes
-            if episode % 10 == 0:
-                intermediate_file = os.path.join(comparison_dir, f"training_history_{model_name}_intermediate.json")
-                with open(intermediate_file, 'w') as f:
-                    json.dump(convert_numpy_types(training_history), f)
+            try:
+                sim_time, train_time, loss = sim.run(episode, epsilon)
+                training_history['reward'].append(float(sim.reward_store[-1]))
+                training_history['loss'].append(float(loss))
+                training_history['waiting_time'].append(float(np.mean(sim.cumulative_wait_store)))
+                training_history['queue_length'].append(float(np.mean(sim.avg_queue_length_store)))
                 
-                metrics_file = os.path.join(comparison_dir, f"system_metrics_{model_name}_intermediate.json")
-                with open(metrics_file, 'w') as f:
-                    json.dump(convert_numpy_types(metrics_history), f)
+                # Record system metrics
+                metrics_history.append(get_system_metrics())
+                
+                # Save intermediate results every 10 episodes
+                if episode % 10 == 0:
+                    intermediate_file = os.path.join(comparison_dir, f"training_history_{model_name}_intermediate.json")
+                    with open(intermediate_file, 'w') as f:
+                        json.dump(convert_numpy_types(training_history), f)
+                    
+                    metrics_file = os.path.join(comparison_dir, f"system_metrics_{model_name}_intermediate.json")
+                    with open(metrics_file, 'w') as f:
+                        json.dump(convert_numpy_types(metrics_history), f)
+                
+                # Print memory usage every 10 episodes
+                if episode % 10 == 0:
+                    print(f"Memory usage for {model_name} at episode {episode}: {metrics_history[-1]['memory_mb']:.2f} MB")
+                    print(f"CPU usage for {model_name} at episode {episode}: {metrics_history[-1]['cpu_percent']:.2f}%")
             
-            # Clean up after each episode
-            cleanup_resources()
-            
-            # Print memory usage every 10 episodes
-            if episode % 10 == 0:
-                print(f"Memory usage for {model_name} at episode {episode}: {metrics_history[-1]['memory_mb']:.2f} MB")
-                print(f"CPU usage for {model_name} at episode {episode}: {metrics_history[-1]['cpu_percent']:.2f}%")
+            except Exception as e:
+                print(f"Error in episode {episode}: {str(e)}")
+                # Try to cleanup and continue
+                cleanup_resources()
+                break
 
         # Calculate total training time
         training_time = time.time() - start_time
@@ -229,6 +246,20 @@ def train_and_evaluate(config_file, model_name, comparison_dir):
         with open(metrics_file, 'w') as f:
             json.dump(convert_numpy_types(metrics_history), f)
 
+        # Clean up intermediate files after final files are created
+        intermediate_history_file = os.path.join(comparison_dir, f"training_history_{model_name}_intermediate.json")
+        intermediate_metrics_file = os.path.join(comparison_dir, f"system_metrics_{model_name}_intermediate.json")
+        
+        try:
+            if os.path.exists(intermediate_history_file):
+                os.remove(intermediate_history_file)
+                print(f"Deleted intermediate history file: {intermediate_history_file}")
+            if os.path.exists(intermediate_metrics_file):
+                os.remove(intermediate_metrics_file)
+                print(f"Deleted intermediate metrics file: {intermediate_metrics_file}")
+        except Exception as e:
+            print(f"Warning: Could not delete intermediate files: {str(e)}")
+
         evaluation_results = {
             'rewards': [float(x) for x in training_history['reward']],
             'waiting_times': [float(x) for x in training_history['waiting_time']],
@@ -236,7 +267,7 @@ def train_and_evaluate(config_file, model_name, comparison_dir):
             'training_time': training_time
         }
 
-        Model.save_model(comparison_dir, phase=model_name)
+        Model.save_model(comparison_dir, phase=model_name, intersection_id='1', config_file=config_file)
 
         return training_history, evaluation_results, metrics_history
         
@@ -395,20 +426,20 @@ def main():
 
         config_files = [
             'training_settings.ini',    # Baseline
-            'training_settings_1.ini',  # Conservative
-            'training_settings_2.ini',  # Aggressive
             'training_settings_3.ini',  # Balanced
+            'training_settings_2.ini',  # Aggressive
             'training_settings_4.ini',  # High Traffic
             'training_settings_5.ini'   # Low Traffic
+            'training_settings_1.ini',  # Conservative
         ]
         
         model_names = [
             'baseline',
-            'conservative',
-            'aggressive',
             'balanced',
+            'aggressive',
             'high_traffic',
-            'low_traffic'
+            'original',
+            'conservative',
         ]
         current_model_names = model_names
         histories = []

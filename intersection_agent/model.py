@@ -4,6 +4,9 @@ import tensorflow as tf
 import numpy as np
 import sys
 import matplotlib.pyplot as plt
+import shutil
+import configparser
+import datetime
 
 from tensorflow import keras
 from tensorflow.keras import layers
@@ -66,14 +69,17 @@ class TrainModel:
         return history.history['loss'][0]
 
 
-    def save_model(self, path, phase='base', model_name=None):
+    def save_model(self, path, phase='base', model_name=None, intersection_id='1', config_file=None):
         """
         Save the current model in the folder as h5 file and a model architecture summary as png
+        Also save the intersection environment and config files for reproducibility
         
         Args:
             path: Directory path to save the model
             phase: Training phase ('base' or 'sync')
             model_name: Optional custom name for the model file (if not provided, will use trained_model_{phase}.h5)
+            intersection_id: ID of the intersection environment used for training
+            config_file: Path to the config file used for training
         """
         if model_name is None:
             model_name = f'trained_model_{phase}.h5'
@@ -82,6 +88,59 @@ class TrainModel:
         model_path = os.path.join(path, model_name)
         self._model.save(model_path)
         print(f"Model saved to: {model_path}")
+        
+        # Copy intersection environment folder
+        try:
+            source_intersection = f'intersection_{intersection_id}'
+            dest_intersection = os.path.join(path, f'intersection_{intersection_id}')
+            
+            if os.path.exists(source_intersection):
+                if os.path.exists(dest_intersection):
+                    shutil.rmtree(dest_intersection)
+                shutil.copytree(source_intersection, dest_intersection)
+                print(f"Intersection environment copied to: {dest_intersection}")
+            else:
+                print(f"Warning: Intersection folder {source_intersection} not found")
+        except Exception as e:
+            print(f"Error copying intersection environment: {str(e)}")
+        
+        # Copy config file
+        try:
+            if config_file and os.path.exists(config_file):
+                dest_config = os.path.join(path, os.path.basename(config_file))
+                shutil.copy2(config_file, dest_config)
+                print(f"Config file copied to: {dest_config}")
+            else:
+                print(f"Warning: Config file {config_file} not found or not specified")
+        except Exception as e:
+            print(f"Error copying config file: {str(e)}")
+        
+        # Copy server config file if exists
+        try:
+            server_config = f'server_config_{intersection_id}.ini'
+            if os.path.exists(server_config):
+                dest_server_config = os.path.join(path, server_config)
+                shutil.copy2(server_config, dest_server_config)
+                print(f"Server config copied to: {dest_server_config}")
+        except Exception as e:
+            print(f"Error copying server config: {str(e)}")
+        
+        # Create a model info file
+        try:
+            info_file = os.path.join(path, 'model_info.txt')
+            with open(info_file, 'w') as f:
+                f.write(f"Model Information\n")
+                f.write(f"================\n")
+                f.write(f"Phase: {phase}\n")
+                f.write(f"Model file: {model_name}\n")
+                f.write(f"Intersection ID: {intersection_id}\n")
+                f.write(f"Environment folder: intersection_{intersection_id}/\n")
+                f.write(f"Config file: {os.path.basename(config_file) if config_file else 'Not specified'}\n")
+                f.write(f"Server config: server_config_{intersection_id}.ini\n")
+                f.write(f"Saved on: {datetime.datetime.now()}\n")
+            print(f"Model info saved to: {info_file}")
+        except Exception as e:
+            print(f"Error creating model info file: {str(e)}")
         
         # Try to save the model plot
         try:

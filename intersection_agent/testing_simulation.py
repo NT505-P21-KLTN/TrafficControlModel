@@ -65,7 +65,7 @@ class Simulation:
         self.max_count = 8
         self.last_spawn_step = 0
         
-        # Vehicle type distribution
+        # Vehicle type distribution (matching the N-S Dominant preset)
         self.vehicle_types = {
             "veh_passenger": 70,
             "veh_bus": 10,
@@ -74,13 +74,46 @@ class Simulation:
             "veh_motorcycle": 5
         }
         
-        # Route distribution
-        self.route_weights = {
+        # Determine excluded directions from server config
+        excluded_directions = set()
+        if agent_id:
+            server_config = f"server_config_{agent_id.replace('agent', '')}.ini"
+            if os.path.exists(server_config):
+                with open(server_config, 'r') as f:
+                    for line in f:
+                        if line.startswith('connected_to'):
+                            connected_agents = [agent.strip() for agent in line.split('=')[1].split(',')]
+                            for agent in connected_agents:
+                                if '_' in agent:
+                                    agent_id_part, direction = agent.split('_')
+                                    if direction == 'east':
+                                        excluded_directions.add('E')
+                                    elif direction == 'south':
+                                        excluded_directions.add('S')
+                                    elif direction == 'west':
+                                        excluded_directions.add('W')
+                                    elif direction == 'north':
+                                        excluded_directions.add('N')
+                            break
+        
+        print(f"Excluded directions for random spawn: {list(excluded_directions)}")
+        
+        # Route distribution (exclude routes from external connection directions)
+        all_routes = {
             "W_N": 15, "W_E": 15, "W_S": 15,
             "N_W": 15, "N_E": 15, "N_S": 15,
             "E_N": 15, "E_S": 15, "E_W": 15,
             "S_N": 15, "S_E": 15, "S_W": 15
         }
+        
+        # Filter out routes from excluded directions
+        self.route_weights = {}
+        for route_id, weight in all_routes.items():
+            start_direction = route_id.split('_')[0]  # Get first letter (W, N, E, S)
+            if start_direction not in excluded_directions:
+                self.route_weights[route_id] = weight
+        
+        print(f"Routes available for random spawn: {list(self.route_weights.keys())}")
         
         # Speed ranges for different vehicle types
         self.speed_ranges = {

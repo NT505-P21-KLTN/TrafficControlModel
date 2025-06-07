@@ -1,12 +1,13 @@
 from __future__ import absolute_import
 from __future__ import print_function
 
-import matplotlib.pyplot
+import matplotlib.pyplot as plt
 import os
 import sys
 import datetime
 import numpy as np
 import argparse
+import json
 
 from training_simulation import Simulation
 from generator import TrafficGenerator
@@ -19,6 +20,68 @@ if 'SUMO_HOME' in os.environ:
     sys.path.append(tools)
 else:
     sys.exit("Please declare the environment variable 'SUMO_HOME'")
+
+def plot_training_results(simulation, loss_history, path):
+    """Plot and save training results"""
+    
+    # Create plots directory
+    plots_dir = os.path.join(path, 'plots')
+    os.makedirs(plots_dir, exist_ok=True)
+    
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
+    
+    # Plot rewards
+    rewards = simulation.reward_store
+    ax1.plot(rewards)
+    ax1.set_title('Episode Rewards')
+    ax1.set_xlabel('Episode')
+    ax1.set_ylabel('Total Reward')
+    ax1.grid(True)
+    
+    # Plot loss
+    ax2.plot(loss_history)
+    ax2.set_title('Training Loss')
+    ax2.set_xlabel('Episode')
+    ax2.set_ylabel('Average Loss')
+    ax2.grid(True)
+    
+    # Plot waiting times
+    waiting_times = simulation.cumulative_wait_store
+    ax3.plot(waiting_times)
+    ax3.set_title('Cumulative Waiting Time')
+    ax3.set_xlabel('Episode')
+    ax3.set_ylabel('Waiting Time (s)')
+    ax3.grid(True)
+    
+    # Plot queue lengths
+    queue_lengths = simulation.avg_queue_length_store
+    ax4.plot(queue_lengths)
+    ax4.set_title('Average Queue Length')
+    ax4.set_xlabel('Episode')
+    ax4.set_ylabel('Queue Length')
+    ax4.grid(True)
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(plots_dir, 'training_results.png'), dpi=300, bbox_inches='tight')
+    plt.close()
+    
+    print(f"Training plots saved to: {plots_dir}")
+
+def save_training_history(simulation, loss_history, path):
+    """Save training history to JSON file"""
+    
+    history = {
+        'rewards': [float(r) for r in simulation.reward_store],
+        'loss': [float(l) for l in loss_history],
+        'waiting_times': [float(w) for w in simulation.cumulative_wait_store],
+        'queue_lengths': [float(q) for q in simulation.avg_queue_length_store]
+    }
+    
+    history_file = os.path.join(path, 'training_history.json')
+    with open(history_file, 'w') as f:
+        json.dump(history, f, indent=2)
+    
+    print(f"Training history saved to: {history_file}")
 
 def train_base_model(config, continue_from=None):
     """
@@ -91,13 +154,18 @@ def train_base_model(config, continue_from=None):
     # Training loop
     episode = 0
     timestamp_start = datetime.datetime.now()
+    loss_history = []  # Track loss for each episode
     
     while episode < config['total_episodes']:
         print('\n----- Base Training: Episode', str(episode+1), 'of', str(config['total_episodes']))
         epsilon = 1.0 - (episode / config['total_episodes'])
-        simulation_time, training_time = simulation.run(episode, epsilon)
-        print('Simulation time:', simulation_time, 's - Training time:', training_time, 's - Total:', 
-              round(simulation_time+training_time, 1), 's')
+        simulation_time, training_time, avg_loss = simulation.run(episode, epsilon)
+        
+        # Store loss for plotting
+        loss_history.append(avg_loss)
+        
+        print('Simulation time:', simulation_time, 's - Training time:', training_time, 's - Avg Loss:', 
+              round(avg_loss, 4), '- Total:', round(simulation_time+training_time, 1), 's')
         episode += 1
 
     print("\n" + "="*50)
@@ -110,7 +178,12 @@ def train_base_model(config, continue_from=None):
     # Save base model
     model_path = os.path.join(path, 'trained_model_base.h5')
     print(f"\nSaving base model to: {model_path}")
-    Model.save_model(path, phase='base')
+    Model.save_model(path, phase='base', intersection_id='1', config_file='training_settings.ini')
+    
+    # Plot and save training results
+    print("\nGenerating training plots...")
+    plot_training_results(simulation, loss_history, path)
+    save_training_history(simulation, loss_history, path)
     
     # Cleanup
     simulation.cleanup()
