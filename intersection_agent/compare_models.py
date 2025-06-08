@@ -200,7 +200,7 @@ def train_and_evaluate(config_file, model_name, comparison_dir):
         
         for episode in range(config['total_episodes']):
             print(f"\nEpisode {episode + 1}/{config['total_episodes']} - Using config: {config_file}")
-            epsilon = 1.0
+            epsilon = 1.0 - (episode / config['total_episodes'])  # Decay epsilon like training_main.py
             try:
                 sim_time, train_time, loss = sim.run(episode, epsilon)
                 training_history['reward'].append(float(sim.reward_store[-1]))
@@ -425,20 +425,28 @@ def main():
         print(f"Created new comparison directory: {comparison_dir}")
 
         config_files = [
-            'training_settings.ini',    # Baseline
-            'training_settings_3.ini',  # Balanced
-            'training_settings_2.ini',  # Aggressive
-            'training_settings_4.ini',  # High Traffic
-            'training_settings_5.ini'   # Low Traffic
-            'training_settings_1.ini',  # Conservative
+            'training_settings_6.ini',    # Original (Model 165)
+            'training_settings_7.ini',    # Moderate Learning (batch=32, lr=0.0005)
+            'training_settings_8.ini',    # Medium Batch (batch=48, lr=0.001)
+            'training_settings_9.ini',    # High Learning (batch=40, lr=0.0075)
+            'training_settings.ini',      # Baseline
+            'training_settings_3.ini',    # Balanced
+            'training_settings_2.ini',    # Aggressive
+            'training_settings_4.ini',    # High Traffic
+            'training_settings_5.ini',    # Low Traffic
+            'training_settings_1.ini',    # Conservative
         ]
         
         model_names = [
-            'original_batch_and_lr',
+            'original',
+            'moderate_learning',
+            'medium_batch',
+            'high_learning',
+            'baseline',
             'balanced',
             'aggressive',
             'high_traffic',
-            'original',
+            'low_traffic',
             'conservative',
         ]
         current_model_names = model_names
