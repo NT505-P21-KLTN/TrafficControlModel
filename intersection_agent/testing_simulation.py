@@ -20,7 +20,7 @@ PHASE_EWL_YELLOW = 7
 
 
 class Simulation:
-    def __init__(self, Model, TrafficGen, sumo_cmd, max_steps, green_duration, yellow_duration, num_states, num_actions, server_url=None, agent_id=None, mapping_config=None, env_file_path=None, no_route_file=False):
+    def __init__(self, Model, TrafficGen, sumo_cmd, max_steps, green_duration, yellow_duration, num_states, num_actions, server_url=None, agent_id=None, mapping_config=None, env_file_path=None, no_route_file=False, disable_spawn_filtering=False):
         self._Model = Model
         self._TrafficGen = TrafficGen
         self._step = 0
@@ -76,7 +76,7 @@ class Simulation:
         
         # Determine excluded directions from server config
         excluded_directions = set()
-        if agent_id:
+        if agent_id and not disable_spawn_filtering:
             server_config = f"server_config_{agent_id.replace('agent', '')}.ini"
             if os.path.exists(server_config):
                 with open(server_config, 'r') as f:
@@ -96,7 +96,10 @@ class Simulation:
                                         excluded_directions.add('N')
                             break
         
-        print(f"Excluded directions for random spawn: {list(excluded_directions)}")
+        if disable_spawn_filtering:
+            print("Spawn filtering DISABLED - vehicles can spawn from all directions")
+        else:
+            print(f"Excluded directions for random spawn: {list(excluded_directions)}")
         
         # Route distribution (exclude routes from external connection directions)
         all_routes = {
@@ -403,15 +406,21 @@ class Simulation:
                 # Convert state to list format
                 if isinstance(state, np.ndarray):
                     state_list = state.tolist()
-                else:
+                elif isinstance(state, (list, tuple)):
                     state_list = list(state)  # Convert to list if it's not a numpy array
+                else:
+                    state_list = state  # Use as-is if already in proper format
                 
                 # Send state to server
                 self.communicator.send_state(state_list, self._step, traffic_data)
             except Exception as e:
                 print(f"Error in send_state: {e}")
-                print(f"State type: {type(state_list)}")
-                print(f"State content: {state_list}")
+                print(f"State type: {type(state)}")
+                if 'state_list' in locals():
+                    print(f"State list type: {type(state_list)}")
+                    print(f"State content: {state_list}")
+                else:
+                    print(f"State content: {state}")
                 
         return state
 
@@ -550,8 +559,28 @@ class Simulation:
                                 route_edges.append(edge_map[to_dir])
                                 print(f"Created route {route_id} with edges: {route_edges}")
 
-                    # Add the route
-                    traci.route.add(route_id, route_edges)
+                    # Add the route (check if it already exists first)
+                    try:
+                        # Check if route already exists
+                        existing_routes = traci.route.getIDList()
+                        if route_id not in existing_routes:
+                            traci.route.add(route_id, route_edges)
+                        else:
+                            print(f"Route {route_id} already exists, reusing it")
+                    except Exception as route_error:
+                        print(f"Error creating route {route_id}: {route_error}")
+                        print(f"Route edges: {route_edges}")
+                        # Try to create a unique route ID
+                        unique_route_id = f"{route_id}_{int(time.time())}"
+                        try:
+                            traci.route.add(unique_route_id, route_edges)
+                            route_id = unique_route_id
+                            print(f"Created unique route: {route_id}")
+                        except Exception as unique_error:
+                            print(f"Failed to create unique route: {unique_error}")
+                            # Put the vehicle back in the queue
+                            self._incoming_vehicles.insert(0, vehicle_data)
+                            continue
 
                     # Spawn the vehicle using the type from the transfer data
                     traci.vehicle.add(

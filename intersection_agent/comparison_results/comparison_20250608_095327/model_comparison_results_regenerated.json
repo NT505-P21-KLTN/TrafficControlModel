@@ -1,0 +1,42 @@
+{
+    "high_traffic": {
+        "avg_reward": -13688.96,
+        "avg_waiting_time": 38012.27942822667,
+        "avg_queue_length": 7.0393110052271615
+    },
+    "medium_batch": {
+        "avg_reward": -16940.366666666665,
+        "avg_waiting_time": 43315.67726276797,
+        "avg_queue_length": 8.021421715327403
+    },
+    "baseline": {
+        "avg_reward": -16367.693333333333,
+        "avg_waiting_time": 41404.69930026068,
+        "avg_queue_length": 7.667536907455684
+    },
+    "balanced": {
+        "avg_reward": -12860.186666666666,
+        "avg_waiting_time": 37505.84780012281,
+        "avg_queue_length": 6.945527370393112
+    },
+    "original": {
+        "avg_reward": -17304.826666666668,
+        "avg_waiting_time": 44697.73858669949,
+        "avg_queue_length": 8.277358997536943
+    },
+    "conservative": {
+        "avg_reward": -20723.033333333333,
+        "avg_waiting_time": 46952.08571511354,
+        "avg_queue_length": 8.694830687983988
+    },
+    "moderate_learning": {
+        "avg_reward": -15886.353333333333,
+        "avg_waiting_time": 41012.57738859882,
+        "avg_queue_length": 7.594921738629412
+    },
+    "low_traffic": {
+        "avg_reward": -16656.513333333332,
+        "avg_waiting_time": 43583.126079861395,
+        "avg_queue_length": 8.070949274048406
+    }
+}

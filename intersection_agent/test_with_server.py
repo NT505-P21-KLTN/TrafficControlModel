@@ -121,11 +121,11 @@ def read_server_config(config_file='server_config_2.ini'):
 class TestingSimulationWithServer(Simulation):
     def __init__(self, Model, TrafficGen, sumo_cmd, max_steps, green_duration, 
                  yellow_duration, num_states, num_actions, server_url=None, agent_id=None,
-                 mapping_config=None, env_file_path=None, no_route_file=False):
+                 mapping_config=None, env_file_path=None, no_route_file=False, disable_spawn_filtering=False):
         # Call the parent constructor with all parameters
         super().__init__(Model, TrafficGen, sumo_cmd, max_steps, green_duration, 
                          yellow_duration, num_states, num_actions, server_url, agent_id,
-                         mapping_config, env_file_path, no_route_file)
+                         mapping_config, env_file_path, no_route_file, disable_spawn_filtering)
         
         # Initialize server communication if URL is provided
         self._server_url = server_url
@@ -470,8 +470,28 @@ class TestingSimulationWithServer(Simulation):
                                 route_edges.append(edge_map[to_dir])
                                 print(f"Created route {route_id} with edges: {route_edges}")
 
-                    # Add the route
-                    traci.route.add(route_id, route_edges)
+                    # Add the route (check if it already exists first)
+                    try:
+                        # Check if route already exists
+                        existing_routes = traci.route.getIDList()
+                        if route_id not in existing_routes:
+                            traci.route.add(route_id, route_edges)
+                        else:
+                            print(f"Route {route_id} already exists, reusing it")
+                    except Exception as route_error:
+                        print(f"Error creating route {route_id}: {route_error}")
+                        print(f"Route edges: {route_edges}")
+                        # Try to create a unique route ID
+                        unique_route_id = f"{route_id}_{int(time.time())}"
+                        try:
+                            traci.route.add(unique_route_id, route_edges)
+                            route_id = unique_route_id
+                            print(f"Created unique route: {route_id}")
+                        except Exception as unique_error:
+                            print(f"Failed to create unique route: {unique_error}")
+                            # Put the vehicle back in the queue
+                            self._incoming_vehicles.insert(0, vehicle_data)
+                            continue
 
                     # Spawn the vehicle using the type from the transfer data
                     traci.vehicle.add(
@@ -531,6 +551,7 @@ if __name__ == "__main__":
     parser.add_argument('--phase', type=str, help='Phase to use for model loading (e.g., "base", "sync"). If not specified, will use non-phase model.')
     parser.add_argument('-i', '--interactive', action='store_true', help='Run in interactive testing mode with UI')
     parser.add_argument('-n', '--no-route-file', action='store_true', help='Do not generate route file for this intersection')
+    parser.add_argument('--disable-spawn-filtering', action='store_true', help='Allow spawning from all directions (ignore connected_to config)')
     args = parser.parse_args()
     
     # Read server configuration first to get agent ID
@@ -650,7 +671,8 @@ if __name__ == "__main__":
             agent_id,
             mapping_config,
             env_file_path,
-            args.no_route_file
+            args.no_route_file,
+            args.disable_spawn_filtering
         )
         print("----- Testing episode")
         simulation_time = simulation.run(config['episode_seed'])
