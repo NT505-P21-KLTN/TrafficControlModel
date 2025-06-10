@@ -25,6 +25,10 @@ class AgentCommunicatorTraining:
         """
         self.server_url = server_url
         self.agent_id = agent_id or socket.gethostname()
+        
+        # Initialize direct connections (for direct agent-to-agent communication)
+        self.direct_connections = {}
+        
         self.data = {
             'agent_id': self.agent_id,
             'rewards': [],
@@ -64,11 +68,48 @@ class AgentCommunicatorTraining:
         
         print(f"Agent communicator initialized with ID: {self.agent_id}")
         
+        # Clean up any old transfer vehicles for this agent to ensure fresh start
+        self._cleanup_old_transfers()
+        
         # Log what will be sent on first sync
         if self.mapping_config:
             print(f"Mapping configuration will be sent on first sync")
         if env_file_path:
             print(f"Environment topology data will be sent on first sync")
+    
+    def _cleanup_old_transfers(self):
+        """Clean up any old transfer vehicle records for this agent to ensure fresh start"""
+        try:
+            print(f"[INIT] Cleaning up old transfer records for agent {self.agent_id}")
+            
+            # Get all transfers for this agent
+            response = requests.get(f"{self.server_url}/api/vehicle_transfers?agent_id={self.agent_id}", timeout=5)
+            if response.status_code == 200:
+                transfers = response.json()
+                if transfers:
+                    print(f"[INIT] Found {len(transfers)} old transfer records to clean up")
+                    
+                    # Delete each old transfer
+                    cleaned_count = 0
+                    for transfer in transfers:
+                        vehicle_id = transfer.get('vehicle_id')
+                        if vehicle_id:
+                            try:
+                                delete_response = requests.delete(f"{self.server_url}/api/vehicle_transfer/{vehicle_id}", timeout=2)
+                                if delete_response.status_code == 200:
+                                    cleaned_count += 1
+                            except Exception as e:
+                                print(f"[INIT] Failed to delete transfer for vehicle {vehicle_id}: {e}")
+                    
+                    print(f"[INIT] Successfully cleaned up {cleaned_count} old transfer records")
+                else:
+                    print(f"[INIT] No old transfer records found for agent {self.agent_id}")
+            else:
+                print(f"[INIT] Could not retrieve transfer records for cleanup (status: {response.status_code})")
+                
+        except Exception as e:
+            print(f"[INIT] Warning: Failed to cleanup old transfers: {e}")
+            print(f"[INIT] Continuing with initialization...")
     
     def start_background_sync(self):
         """Start a background thread to periodically sync with the server"""
@@ -226,10 +267,20 @@ class AgentCommunicatorTraining:
                     del traffic_data['vehicle_transfer']
                 
                 # Send the rest of the state data
+                # Handle different state types properly
+                state_data = None
+                if state is not None:
+                    if hasattr(state, 'tolist'):
+                        state_data = state.tolist()
+                    elif isinstance(state, (list, tuple)):
+                        state_data = list(state)
+                    else:
+                        state_data = state
+                
                 data = {
                     'agent_id': self.agent_id,
                     'step': step,
-                    'state': state.tolist() if state is not None else None,
+                    'state': state_data,
                     'traffic_data': traffic_data
                 }
                 response = requests.post(f"{self.server_url}/api/update", json=data)
@@ -451,11 +502,48 @@ class AgentCommunicatorTesting:
         
         print(f"Agent communicator initialized with ID: {self.agent_id}")
         
+        # Clean up any old transfer vehicles for this agent to ensure fresh start
+        self._cleanup_old_transfers()
+        
         # Log what will be sent on first sync
         if self.mapping_config:
             print(f"Mapping configuration will be sent on first sync")
         if env_file_path:
             print(f"Environment topology data will be sent on first sync")
+    
+    def _cleanup_old_transfers(self):
+        """Clean up any old transfer vehicle records for this agent to ensure fresh start"""
+        try:
+            print(f"[INIT] Cleaning up old transfer records for agent {self.agent_id}")
+            
+            # Get all transfers for this agent
+            response = requests.get(f"{self.server_url}/api/vehicle_transfers?agent_id={self.agent_id}", timeout=5)
+            if response.status_code == 200:
+                transfers = response.json()
+                if transfers:
+                    print(f"[INIT] Found {len(transfers)} old transfer records to clean up")
+                    
+                    # Delete each old transfer
+                    cleaned_count = 0
+                    for transfer in transfers:
+                        vehicle_id = transfer.get('vehicle_id')
+                        if vehicle_id:
+                            try:
+                                delete_response = requests.delete(f"{self.server_url}/api/vehicle_transfer/{vehicle_id}", timeout=2)
+                                if delete_response.status_code == 200:
+                                    cleaned_count += 1
+                            except Exception as e:
+                                print(f"[INIT] Failed to delete transfer for vehicle {vehicle_id}: {e}")
+                    
+                    print(f"[INIT] Successfully cleaned up {cleaned_count} old transfer records")
+                else:
+                    print(f"[INIT] No old transfer records found for agent {self.agent_id}")
+            else:
+                print(f"[INIT] Could not retrieve transfer records for cleanup (status: {response.status_code})")
+                
+        except Exception as e:
+            print(f"[INIT] Warning: Failed to cleanup old transfers: {e}")
+            print(f"[INIT] Continuing with initialization...")
     
     def start_background_sync(self):
         """Start background sync thread"""
@@ -517,10 +605,20 @@ class AgentCommunicatorTesting:
                     del traffic_data['vehicle_transfer']
                 
                 # Send the rest of the state data
+                # Handle different state types properly
+                state_data = None
+                if state is not None:
+                    if hasattr(state, 'tolist'):
+                        state_data = state.tolist()
+                    elif isinstance(state, (list, tuple)):
+                        state_data = list(state)
+                    else:
+                        state_data = state
+                
                 data = {
                     'agent_id': self.agent_id,
                     'step': step,
-                    'state': state.tolist() if state is not None else None,
+                    'state': state_data,
                     'traffic_data': traffic_data
                 }
                 response = requests.post(f"{self.server_url}/api/update", json=data)

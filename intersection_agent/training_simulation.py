@@ -4,6 +4,7 @@ import random
 import timeit
 import os
 import time
+import requests
 from agent_communicator import AgentCommunicatorTraining
 
 # phase codes based on environment.net.xml
@@ -34,6 +35,42 @@ class Simulation:
         self._cumulative_wait_store = []
         self._avg_queue_length_store = []
         self._training_epochs = training_epochs
+        
+        # Multi-intersection vehicle tracking
+        self._agent_id = agent_id
+        self._mapping_config = mapping_config
+        self._active_vehicles = set()  # Track vehicles currently in simulation
+        self._exited_vehicles = {}  # Track vehicles that have exited and their destinations
+        self._incoming_vehicles = []  # Track vehicles that should be spawned
+        self._vehicle_counter = 0
+        
+        # Add persistent tracking to prevent duplicate vehicle processing across episodes
+        self._processed_transfer_ids = set()  # Track vehicles we've already processed
+        self._spawn_attempts = {}  # Track spawn attempts per vehicle to prevent infinite retries
+        
+        # Road connections for vehicle transfers
+        self.road_connections = {}
+        if mapping_config and 'map' in mapping_config:
+            connected_to = mapping_config['map'].get('connected_to', [])
+            for connection in connected_to:
+                if '_' in connection:
+                    parts = connection.split('_')
+                    if len(parts) >= 2:
+                        direction = parts[1].lower()
+                        agent_id = parts[0]
+                        
+                        # Map directions to roads
+                        road_map = {
+                            'north': 'TL2N',
+                            'south': 'TL2S', 
+                            'east': 'TL2E',
+                            'west': 'TL2W'
+                        }
+                        
+                        if direction in road_map:
+                            self.road_connections[road_map[direction]] = agent_id
+        
+        print(f"Training agent {agent_id} road connections: {self.road_connections}")
         
         # Initialize server communication if URL is provided
         self.server_url = server_url
@@ -88,6 +125,10 @@ class Simulation:
         old_action = -1
 
         while self._step < self._max_steps:
+            # Track vehicles and check for incoming vehicles from other intersections
+            if self.communicator:
+                self._track_vehicles()
+                self._check_incoming_vehicles()
 
             # get current state of the intersection
             current_state = self._get_state()
@@ -412,4 +453,380 @@ class Simulation:
                 
                 print(f"Adjusted timing for sync with {target_id}: offset={offset}s, cycle={cycle_time}s, green={self._green_duration}s")
                 break  # For now, just use the first sync timing we find
+
+
+    def _track_vehicles(self):
+        """Track vehicles that enter and exit the simulation for multi-intersection coordination"""
+        if not traci.isLoaded():
+            return
+
+        try:
+            # Get current vehicles
+            current_vehicles = set(traci.vehicle.getIDList())
+            
+            # Define boundary detection points (in meters from intersection)
+            boundary_distance = 20.0  # 20 meters from intersection
+            
+            # Check each vehicle's position for potential transfers
+            for vehicle_id in current_vehicles:
+                try:
+                    # Skip if vehicle is already being tracked for exit
+                    if vehicle_id in self._exited_vehicles:
+                        continue
+                        
+                    # Get vehicle's current road and position
+                    current_road = traci.vehicle.getRoadID(vehicle_id)
+                    current_position = traci.vehicle.getLanePosition(vehicle_id)
+                    
+                    # Check if vehicle is on an exit road and approaching the boundary
+                    if current_road in ["TL2N", "TL2S", "TL2E", "TL2W"]:
+                        # Check if vehicle is near the boundary point
+                        if current_position >= boundary_distance:
+                            # Get vehicle details
+                            vehicle_type = traci.vehicle.getTypeID(vehicle_id)
+                            route = traci.vehicle.getRouteID(vehicle_id)
+                            speed = traci.vehicle.getSpeed(vehicle_id)
+                            lane = traci.vehicle.getLaneIndex(vehicle_id)
+                            position = traci.vehicle.getPosition(vehicle_id)
+                            waiting_time = traci.vehicle.getAccumulatedWaitingTime(vehicle_id)
+                            
+                            # Determine exit direction and destination agent based on road
+                            exit_direction = None
+                            destination_agent = None
+                            
+                            if current_road == 'TL2N':
+                                exit_direction = 'north'
+                                destination_agent = self.road_connections.get('TL2N')
+                            elif current_road == 'TL2S':
+                                exit_direction = 'south'
+                                destination_agent = self.road_connections.get('TL2S')
+                            elif current_road == 'TL2E':
+                                exit_direction = 'east'
+                                destination_agent = self.road_connections.get('TL2E')
+                            elif current_road == 'TL2W':
+                                exit_direction = 'west'
+                                destination_agent = self.road_connections.get('TL2W')
+                                
+                            # Only transfer vehicle if there's a destination agent
+                            if destination_agent and self.communicator:
+                                # Mark vehicle as exited to prevent duplicate processing
+                                self._exited_vehicles[vehicle_id] = {
+                                    'destination': destination_agent,
+                                    'exit_direction': exit_direction,
+                                    'timestamp': time.time()
+                                }
+                                
+                                # Prepare transfer data
+                                transfer_data = {
+                                    'vehicle_id': vehicle_id,
+                                    'type': vehicle_type,
+                                    'route': route,
+                                    'speed': speed,
+                                    'lane': lane,
+                                    'position': position,
+                                    'waiting_time': waiting_time,
+                                    'exit_direction': exit_direction,
+                                    'from_agent': self._agent_id,
+                                    'to_agent': destination_agent,
+                                    'timestamp': time.time()
+                                }
+                                
+                                # Send vehicle transfer data via traffic data in state update
+                                traffic_data_with_transfer = {
+                                    'vehicle_transfer': transfer_data,
+                                    'queue_length': self._get_queue_length(),
+                                    'current_phase': traci.trafficlight.getPhase("TL"),
+                                    'training_mode': True
+                                }
+                                
+                                self.communicator.send_state(None, self._step, traffic_data_with_transfer)
+                                print(f"[TRAINING] Sent vehicle {vehicle_id} to agent {destination_agent} via {exit_direction}")
+                                
+                except traci.exceptions.TraCIException:
+                    # Vehicle is no longer in simulation, skip it
+                    continue
+                except Exception as e:
+                    print(f"Error tracking vehicle {vehicle_id}: {e}")
+            
+            # Find vehicles that have actually exited
+            exited = self._active_vehicles - current_vehicles
+            for vehicle_id in exited:
+                # Remove from active vehicles and exited tracking
+                self._active_vehicles.discard(vehicle_id)
+                if vehicle_id in self._exited_vehicles:
+                    del self._exited_vehicles[vehicle_id]
+            
+            # Update active vehicles
+            self._active_vehicles = current_vehicles
+            
+        except Exception as e:
+            print(f"Error in _track_vehicles: {e}")
+
+    def _check_incoming_vehicles(self):
+        """Check for and spawn incoming vehicles from other intersections during training"""
+        if not traci.isLoaded():
+            return
+        if not self.server_url:
+            return
+
+        try:
+            # Periodic cleanup of old tracking data to prevent memory buildup
+            if self._step % 1000 == 0:  # Every 1000 steps
+                print(f"[TRAINING] Periodic cleanup: {len(self._processed_transfer_ids)} processed vehicles, {len(self._spawn_attempts)} spawn attempts tracked")
+                # Keep only recent failed attempts, clear very old processed IDs
+                if len(self._processed_transfer_ids) > 10000:
+                    # Keep only the most recent 5000 processed IDs
+                    recent_ids = list(self._processed_transfer_ids)[-5000:]
+                    self._processed_transfer_ids = set(recent_ids)
+                    print(f"[TRAINING] Cleaned up old processed IDs, now tracking {len(self._processed_transfer_ids)}")
+                
+                # Clear old spawn attempts (keep only those from last few minutes)
+                current_time = time.time()
+                if hasattr(self, '_last_cleanup_time'):
+                    if current_time - self._last_cleanup_time > 300:  # 5 minutes
+                        self._spawn_attempts.clear()
+                        self._last_cleanup_time = current_time
+                else:
+                    self._last_cleanup_time = current_time
+
+            # Get vehicle transfers from the server
+            response = requests.get(f"{self.server_url}/api/vehicle_transfers?agent_id={self._agent_id}", timeout=2)
+            if response.status_code != 200:
+                return
+                
+            vehicle_transfers = response.json()
+            if not vehicle_transfers:
+                return
+                
+            print(f"[TRAINING] Received {len(vehicle_transfers)} vehicles to spawn in episode")
+            
+            # Track which vehicles we've already processed to avoid duplicates
+            processed_vehicles = set()
+            
+            for vehicle_data in vehicle_transfers:
+                try:
+                    vehicle_id = vehicle_data.get('vehicle_id')
+                    if not vehicle_id:
+                        continue
+                        
+                    # Skip if we've already processed this vehicle in any episode
+                    if vehicle_id in self._processed_transfer_ids:
+                        print(f"[TRAINING] Vehicle {vehicle_id} already processed in previous episode, skipping")
+                        requests.delete(f"{self.server_url}/api/vehicle_transfer/{vehicle_id}", timeout=2)
+                        continue
+                        
+                    # Skip if we've already processed this vehicle in this batch
+                    if vehicle_id in processed_vehicles:
+                        continue
+                        
+                    # Track spawn attempts to prevent infinite retries
+                    if vehicle_id in self._spawn_attempts and self._spawn_attempts[vehicle_id] >= 3:
+                        print(f"[TRAINING] Vehicle {vehicle_id} has failed spawn attempts 3 times, removing from queue")
+                        requests.delete(f"{self.server_url}/api/vehicle_transfer/{vehicle_id}", timeout=2)
+                        self._processed_transfer_ids.add(vehicle_id)
+                        continue
+                        
+                    # Check if vehicle already exists in simulation
+                    try:
+                        current_vehicles = set(traci.vehicle.getIDList())
+                        if vehicle_id in current_vehicles:
+                            print(f"[TRAINING] Vehicle {vehicle_id} already exists, skipping spawn")
+                            # Delete this transfer since vehicle is already spawned
+                            requests.delete(f"{self.server_url}/api/vehicle_transfer/{vehicle_id}", timeout=2)
+                            processed_vehicles.add(vehicle_id)
+                            self._processed_transfer_ids.add(vehicle_id)
+                            continue
+                    except:
+                        pass  # Continue if we can't check current vehicles
+                    
+                    # Add to incoming vehicles list with spawn position
+                    entry_road = None
+                    entry_lane = 0
+                    
+                    # Determine entry road based on exit direction from previous intersection
+                    if vehicle_data.get('exit_direction'):
+                        if vehicle_data['exit_direction'] == 'north':
+                            entry_road = 'S2TL'
+                        elif vehicle_data['exit_direction'] == 'south':
+                            entry_road = 'N2TL'
+                        elif vehicle_data['exit_direction'] == 'east':
+                            entry_road = 'W2TL'
+                        elif vehicle_data['exit_direction'] == 'west':
+                            entry_road = 'E2TL'
+                    
+                    if entry_road:
+                        # Get the road length
+                        try:
+                            road_length = traci.edge.getLength(entry_road)
+                        except:
+                            road_length = 100.0  # Default length if we can't get it
+                            
+                        # Add spawn information to vehicle data
+                        vehicle_data['spawn_road'] = entry_road
+                        vehicle_data['spawn_lane'] = entry_lane
+                        vehicle_data['road_length'] = road_length
+                        
+                        # Add to incoming vehicles list
+                        self._incoming_vehicles.append(vehicle_data)
+                        processed_vehicles.add(vehicle_id)
+                        
+                except Exception as e:
+                    print(f"Error processing vehicle transfer: {e}")
+
+            # Spawn any incoming vehicles
+            spawned_count = 0
+            max_spawn_per_step = 5  # Limit spawning to prevent overload
+            
+            while self._incoming_vehicles and spawned_count < max_spawn_per_step:
+                vehicle_data = self._incoming_vehicles.pop(0)
+                try:
+                    original_vehicle_id = vehicle_data['vehicle_id']
+                    
+                    # Generate a unique vehicle ID to prevent conflicts across intersections
+                    unique_vehicle_id = f"{self._agent_id}_{original_vehicle_id}_{self._step}_{int(time.time() * 1000000) % 1000000}"
+                    
+                    # Double-check vehicle doesn't exist before spawning (check both original and unique IDs)
+                    try:
+                        current_vehicles = set(traci.vehicle.getIDList())
+                        if original_vehicle_id in current_vehicles or unique_vehicle_id in current_vehicles:
+                            print(f"[TRAINING] Vehicle {original_vehicle_id} already exists, skipping spawn")
+                            # Delete this transfer since vehicle is already spawned
+                            requests.delete(f"{self.server_url}/api/vehicle_transfer/{original_vehicle_id}", timeout=2)
+                            processed_vehicles.add(original_vehicle_id)
+                            self._processed_transfer_ids.add(original_vehicle_id)
+                            continue
+                    except Exception as check_error:
+                        print(f"Warning: Could not check existing vehicles: {check_error}")
+                        # Continue with spawning but be more careful
+                    
+                    # Create route for the vehicle
+                    route_id = f"training_route_{unique_vehicle_id}"
+                    
+                    # Determine the route edges based on the original route and entry road
+                    route_edges = [vehicle_data['spawn_road']]
+                    
+                    # Add destination edge based on original route
+                    if 'route' in vehicle_data:
+                        route_parts = vehicle_data['route'].split('_')
+                        if len(route_parts) >= 2:
+                            # Map the route parts to actual edge names
+                            to_dir = route_parts[1]
+                            
+                            # Map directions to edge names
+                            edge_map = {
+                                'N': 'TL2N',
+                                'S': 'TL2S',
+                                'E': 'TL2E',
+                                'W': 'TL2W'
+                            }
+                            
+                            # Add the destination edge if it exists in our map
+                            if to_dir in edge_map:
+                                route_edges.append(edge_map[to_dir])
+                                print(f"[TRAINING] Created route {route_id} with edges: {route_edges}")
+                    
+                    # Add the route (check if it already exists first)
+                    try:
+                        existing_routes = traci.route.getIDList()
+                        if route_id not in existing_routes:
+                            traci.route.add(route_id, route_edges)
+                        else:
+                            # Create even more unique route ID
+                            route_id = f"training_route_fallback_{self._vehicle_counter}_{int(time.time() * 1000000)}"
+                            traci.route.add(route_id, route_edges)
+                            self._vehicle_counter += 1
+                    except Exception as route_error:
+                        print(f"Error creating training route {route_id}: {route_error}")
+                        # Try to create a completely unique route ID
+                        try:
+                            route_id = f"emergency_route_{self._agent_id}_{self._vehicle_counter}_{int(time.time() * 1000000)}"
+                            traci.route.add(route_id, route_edges)
+                            self._vehicle_counter += 1
+                        except Exception as unique_error:
+                            print(f"Failed to create any training route: {unique_error}")
+                            # Delete the transfer and continue
+                            requests.delete(f"{self.server_url}/api/vehicle_transfer/{original_vehicle_id}", timeout=2)
+                            continue
+
+                    # Attempt to spawn the vehicle with enhanced error handling
+                    try:
+                        traci.vehicle.add(
+                            vehID=unique_vehicle_id,
+                            routeID=route_id,
+                            typeID=vehicle_data['type'],
+                            departLane=str(vehicle_data['spawn_lane']),
+                            departSpeed=str(vehicle_data['speed']),
+                            departPos="0"
+                        )
+                        print(f"[TRAINING] Spawned transferred vehicle {unique_vehicle_id} (original: {original_vehicle_id}) of type {vehicle_data['type']} on {vehicle_data['spawn_road']}")
+                        
+                        # Mark as successfully processed
+                        self._processed_transfer_ids.add(original_vehicle_id)
+                        
+                        # Delete the transfer from server after successful spawn
+                        try:
+                            requests.delete(f"{self.server_url}/api/vehicle_transfer/{original_vehicle_id}", timeout=2)
+                            print(f"[TRAINING] Deleted transfer record for {original_vehicle_id}")
+                        except Exception as delete_error:
+                            print(f"Warning: Could not delete transfer record for {original_vehicle_id}: {delete_error}")
+                        
+                        spawned_count += 1
+                        
+                    except traci.exceptions.TraCIException as traci_error:
+                        # Track the spawn attempt
+                        self._spawn_attempts[original_vehicle_id] = self._spawn_attempts.get(original_vehicle_id, 0) + 1
+                        
+                        error_msg = str(traci_error)
+                        if "exists" in error_msg.lower():
+                            print(f"[TRAINING] Vehicle ID conflict detected for {unique_vehicle_id}: {traci_error}")
+                            # Try with an even more unique ID
+                            try:
+                                emergency_id = f"emergency_{self._agent_id}_{int(time.time() * 1000000)}_{spawned_count}"
+                                traci.vehicle.add(
+                                    vehID=emergency_id,
+                                    routeID=route_id,
+                                    typeID=vehicle_data['type'],
+                                    departLane=str(vehicle_data['spawn_lane']),
+                                    departSpeed=str(vehicle_data['speed']),
+                                    departPos="0"
+                                )
+                                print(f"[TRAINING] Emergency spawn successful with ID {emergency_id}")
+                                self._processed_transfer_ids.add(original_vehicle_id)
+                                spawned_count += 1
+                                
+                                # Delete the transfer from server after successful emergency spawn
+                                try:
+                                    requests.delete(f"{self.server_url}/api/vehicle_transfer/{original_vehicle_id}", timeout=2)
+                                except:
+                                    pass
+                                    
+                            except Exception as emergency_error:
+                                print(f"[TRAINING] Emergency spawn failed: {emergency_error}")
+                                # Give up on this vehicle and clean up
+                                try:
+                                    requests.delete(f"{self.server_url}/api/vehicle_transfer/{original_vehicle_id}", timeout=2)
+                                    self._processed_transfer_ids.add(original_vehicle_id)
+                                except:
+                                    pass
+                        else:
+                            print(f"[TRAINING] SUMO error spawning vehicle: {traci_error}")
+                            # Clean up transfer record
+                            try:
+                                requests.delete(f"{self.server_url}/api/vehicle_transfer/{original_vehicle_id}", timeout=2)
+                                self._processed_transfer_ids.add(original_vehicle_id)
+                            except:
+                                pass
+                        
+                except Exception as e:
+                    print(f"Error spawning transferred vehicle in training: {e}")
+                    # Clean up the transfer record
+                    try:
+                        if 'vehicle_id' in vehicle_data:
+                            requests.delete(f"{self.server_url}/api/vehicle_transfer/{vehicle_data['vehicle_id']}", timeout=2)
+                    except:
+                        pass
+                    # Don't break the loop, continue with next vehicle
+                    
+        except Exception as e:
+            print(f"Error in _check_incoming_vehicles during training: {e}")
 

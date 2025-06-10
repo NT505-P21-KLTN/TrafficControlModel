@@ -188,8 +188,8 @@ if __name__ == "__main__":
     while episode < config['total_episodes']:
         print('\n----- Episode', str(episode+1), 'of', str(config['total_episodes']))
         epsilon = 1.0 - (episode / config['total_episodes'])  # set the epsilon for this episode according to epsilon-greedy policy
-        simulation_time, training_time = Simulation.run(episode, epsilon)
-        print('Simulation time:', simulation_time, 's - Training time:', training_time, 's - Total:', round(simulation_time+training_time, 1), 's')
+        simulation_time, training_time, avg_loss = Simulation.run(episode, epsilon)
+        print('Simulation time:', simulation_time, 's - Training time:', training_time, 's - Avg Loss:', round(avg_loss, 4), '- Total:', round(simulation_time+training_time, 1), 's')
         episode += 1
 
     print("\n" + "="*50)

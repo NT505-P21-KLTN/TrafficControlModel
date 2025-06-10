@@ -906,6 +906,41 @@ def delete_transfer(vehicle_id):
         log_event(f"ERROR in delete_transfer: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/vehicle_transfers/clear/<agent_id>', methods=['DELETE'])
+def clear_agent_transfers(agent_id):
+    """Endpoint for clearing all vehicle transfer data for a specific agent"""
+    try:
+        if not os.path.exists(VEHICLE_TRANSFER_FILE):
+            log_event(f"Vehicle transfer file not found at {VEHICLE_TRANSFER_FILE}")
+            return jsonify({'status': 'success', 'cleared': 0})
+
+        with open(VEHICLE_TRANSFER_FILE, 'r') as f:
+            transfers = json.load(f)
+
+        # Count transfers for this agent before removal
+        original_length = len(transfers)
+        agent_transfers = [t for t in transfers if t.get('to_agent') == agent_id]
+        cleared_count = len(agent_transfers)
+        
+        # Remove all transfers for the specified agent
+        transfers = [t for t in transfers if t.get('to_agent') != agent_id]
+
+        # Save the updated data
+        with open(VEHICLE_TRANSFER_FILE, 'w') as f:
+            json.dump(transfers, f, indent=2)
+            
+        # Also clear from memory
+        if agent_id in agent_data and 'coordination' in agent_data[agent_id]:
+            if 'incoming_vehicles' in agent_data[agent_id]['coordination']:
+                agent_data[agent_id]['coordination']['incoming_vehicles'] = []
+
+        log_event(f"Successfully cleared {cleared_count} vehicle transfer records for agent {agent_id}")
+        return jsonify({'status': 'success', 'cleared': cleared_count})
+
+    except Exception as e:
+        log_event(f"ERROR clearing vehicle transfers for agent {agent_id}: {str(e)}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 if __name__ == '__main__':
     # Create template files if they don't exist
     if not os.path.exists('templates/index.html'):
