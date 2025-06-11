@@ -169,6 +169,8 @@ class AgentCommunicatorTraining:
     def update_status(self, status):
         """Update the agent's status"""
         self.data['status'] = status
+        self.current_data['status'] = status  # Also update current_data status for server sync
+        self.current_data['status'] = status  # Also update current_data status for server sync
         
     def update_config(self, config):
         """Update the agent's configuration"""
@@ -183,6 +185,15 @@ class AgentCommunicatorTraining:
         try:
             # Create a copy of only the current data to send
             send_data = self.current_data.copy()
+            
+            # Filter out states with None values (vehicle transfers) - only keep actual DRL states
+            valid_states = []
+            for state_entry in send_data.get('states', []):
+                if state_entry.get('state') is not None:
+                    valid_states.append(state_entry)
+            
+            # Replace states with filtered valid states only
+            send_data['states'] = valid_states
             
             # Add topology data only on first sync
             if not self.topology_sent:
@@ -209,7 +220,7 @@ class AgentCommunicatorTraining:
                 len(send_data['states']) > 0 or 
                 not self.topology_sent):
                 
-                print("Sending current data to server:", send_data)
+                print(f"Sending current data to server: {{'agent_id': '{send_data['agent_id']}', 'rewards': {send_data['rewards']}, 'queue_lengths': {send_data['queue_lengths']}, 'waiting_times': {send_data['waiting_times']}, 'status': '{send_data['status']}', 'last_episode': {send_data['last_episode']}, 'states': {len(send_data['states'])} valid states}}")
                 response = requests.post(
                     f"{self.server_url}/api/update", 
                     json=send_data,
@@ -217,7 +228,7 @@ class AgentCommunicatorTraining:
                 )
                 
                 if response.status_code == 200:
-                    print(f"Successfully synced with server. Episodes: {len(self.current_data['rewards'])}")
+                    print(f"Successfully synced with server. Episodes: {len(self.current_data['rewards'])}, States: {len(valid_states)} valid out of {len(self.current_data['states'])} total")
                     self.last_sync = time.time()
                     
                     # Clear current data after successful sync
@@ -246,6 +257,20 @@ class AgentCommunicatorTraining:
     def send_state(self, state, step, traffic_data):
         """Send state to server and connected agents"""
         try:
+            # Store state data for periodic sync
+            state_entry = {
+                'step': step,
+                'state': state,
+                'traffic_data': traffic_data,
+                'timestamp': time.time()
+            }
+            self.current_data['states'].append(state_entry)
+            
+            # Limit states list size and trigger sync if needed
+            if len(self.current_data['states']) > 100:  # Limit to 100 states
+                print(f"State buffer full for {self.agent_id}, triggering sync")
+                self.sync_with_server()
+            
             # Send to server
             if self.server_url:
                 # If there's vehicle transfer data, send it separately
@@ -584,6 +609,20 @@ class AgentCommunicatorTesting:
     def send_state(self, state, step, traffic_data):
         """Send state to server and connected agents"""
         try:
+            # Store state data for periodic sync
+            state_entry = {
+                'step': step,
+                'state': state,
+                'traffic_data': traffic_data,
+                'timestamp': time.time()
+            }
+            self.current_data['states'].append(state_entry)
+            
+            # Limit states list size and trigger sync if needed
+            if len(self.current_data['states']) > 100:  # Limit to 100 states
+                print(f"State buffer full for {self.agent_id}, triggering sync")
+                self.sync_with_server()
+            
             # Send to server
             if self.server_url:
                 # If there's vehicle transfer data, send it separately
@@ -666,6 +705,16 @@ class AgentCommunicatorTesting:
     def sync_with_server(self):
         try:
             send_data = self.current_data.copy()
+            
+            # Filter out states with None values (vehicle transfers) - only keep actual DRL states
+            valid_states = []
+            for state_entry in send_data.get('states', []):
+                if state_entry.get('state') is not None:
+                    valid_states.append(state_entry)
+            
+            # Replace states with filtered valid states only
+            send_data['states'] = valid_states
+            
             if not self.topology_sent:
                 topology_data = {}
                 if self.mapping_config:
@@ -678,14 +727,14 @@ class AgentCommunicatorTesting:
                 if topology_data:
                     send_data['topology'] = topology_data
             if len(send_data['states']) > 0 or not self.topology_sent:
-                #print("[TEST] Sending current data to server:", send_data)
+                print(f"[TEST] Sending current data to server: {{'agent_id': '{send_data['agent_id']}', 'states': {len(send_data['states'])} valid states}}")
                 response = requests.post(
                     f"{self.server_url}/api/update",
                     json=send_data,
                     timeout=10
                 )
                 if response.status_code == 200:
-                    print(f"[TEST] Successfully synced with server.")
+                    print(f"[TEST] Successfully synced with server. States: {len(valid_states)} valid out of {len(self.current_data['states'])} total")
                     self.last_sync = time.time()
                     self.current_data['states'] = []
                     if not self.topology_sent and 'topology' in send_data:

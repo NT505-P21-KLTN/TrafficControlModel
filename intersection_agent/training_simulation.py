@@ -57,7 +57,7 @@ class Simulation:
                     parts = connection.split('_')
                     if len(parts) >= 2:
                         direction = parts[1].lower()
-                        agent_id = parts[0]
+                        connected_agent_id = parts[0]
                         
                         # Map directions to roads
                         road_map = {
@@ -68,7 +68,7 @@ class Simulation:
                         }
                         
                         if direction in road_map:
-                            self.road_connections[road_map[direction]] = agent_id
+                            self.road_connections[road_map[direction]] = connected_agent_id
         
         print(f"Training agent {agent_id} road connections: {self.road_connections}")
         
@@ -125,43 +125,50 @@ class Simulation:
         old_action = -1
 
         while self._step < self._max_steps:
-            # Track vehicles and check for incoming vehicles from other intersections
-            if self.communicator:
-                self._track_vehicles()
-                self._check_incoming_vehicles()
+            try:
+                # Track vehicles and check for incoming vehicles from other intersections
+                if self.communicator:
+                    self._track_vehicles()
+                    self._check_incoming_vehicles()
 
-            # get current state of the intersection
-            current_state = self._get_state()
+                # get current state of the intersection
+                current_state = self._get_state()
 
-            # calculate reward of previous action: (change in cumulative waiting time between actions)
-            # waiting time = seconds waited by a car since the spawn in the environment, cumulated for every car in incoming lanes
-            current_total_wait = self._collect_waiting_times()
-            reward = old_total_wait - current_total_wait
+                # calculate reward of previous action: (change in cumulative waiting time between actions)
+                # waiting time = seconds waited by a car since the spawn in the environment, cumulated for every car in incoming lanes
+                current_total_wait = self._collect_waiting_times()
+                reward = old_total_wait - current_total_wait
 
-            # saving the data into the memory
-            if self._step != 0:
-                self._Memory.add_sample((old_state, old_action, reward, current_state))
+                # saving the data into the memory
+                if self._step != 0:
+                    self._Memory.add_sample((old_state, old_action, reward, current_state))
 
-            # choose the light phase to activate, based on the current state of the intersection
-            action = self._choose_action(current_state, epsilon)
+                # choose the light phase to activate, based on the current state of the intersection
+                action = self._choose_action(current_state, epsilon)
 
-            # if the chosen phase is different from the last phase, activate the yellow phase
-            if self._step != 0 and old_action != action:
-                self._set_yellow_phase(old_action)
-                self._simulate(self._yellow_duration)
+                # if the chosen phase is different from the last phase, activate the yellow phase
+                if self._step != 0 and old_action != action:
+                    self._set_yellow_phase(old_action)
+                    self._simulate(self._yellow_duration)
 
-            # execute the phase selected before
-            self._set_green_phase(action)
-            self._simulate(self._green_duration)
+                # execute the phase selected before
+                self._set_green_phase(action)
+                self._simulate(self._green_duration)
 
-            # saving variables for later & accumulate reward
-            old_state = current_state
-            old_action = action
-            old_total_wait = current_total_wait
+                # saving variables for later & accumulate reward
+                old_state = current_state
+                old_action = action
+                old_total_wait = current_total_wait
 
-            # saving only the meaningful reward to better see if the agent is behaving correctly
-            if reward < 0:
-                self._sum_neg_reward += reward
+                # saving only the meaningful reward to better see if the agent is behaving correctly
+                if reward < 0:
+                    self._sum_neg_reward += reward
+                    
+            except Exception as step_error:
+                print(f"[TRAINING] Error in simulation step {self._step}: {step_error}")
+                print(f"[TRAINING] Continuing to next step to prevent crash...")
+                # Continue with next step instead of crashing
+                continue
 
         self._save_episode_stats()
         avg_queue_length = self._sum_queue_length / self._max_steps
@@ -461,8 +468,15 @@ class Simulation:
             return
 
         try:
-            # Get current vehicles
-            current_vehicles = set(traci.vehicle.getIDList())
+            # Get current vehicles WITH ERROR HANDLING
+            try:
+                current_vehicles = set(traci.vehicle.getIDList())
+            except traci.exceptions.TraCIException as e:
+                print(f"[TRAINING] TraCI error getting vehicle list: {e}")
+                return
+            except Exception as e:
+                print(f"[TRAINING] Error getting vehicle list: {e}")
+                return
             
             # Define boundary detection points (in meters from intersection)
             boundary_distance = 20.0  # 20 meters from intersection
@@ -539,8 +553,11 @@ class Simulation:
                                     'training_mode': True
                                 }
                                 
-                                self.communicator.send_state(None, self._step, traffic_data_with_transfer)
-                                print(f"[TRAINING] Sent vehicle {vehicle_id} to agent {destination_agent} via {exit_direction}")
+                                # Get current state for better sync agent coordination
+                                current_state = self._get_state()
+                                
+                                self.communicator.send_state(current_state.tolist(), self._step, traffic_data_with_transfer)
+                                print(f"[TRAINING] Sent vehicle {vehicle_id} to agent {destination_agent} via {exit_direction} (with state data)")
                                 
                 except traci.exceptions.TraCIException:
                     # Vehicle is no longer in simulation, skip it
@@ -589,13 +606,28 @@ class Simulation:
                 else:
                     self._last_cleanup_time = current_time
 
-            # Get vehicle transfers from the server
-            response = requests.get(f"{self.server_url}/api/vehicle_transfers?agent_id={self._agent_id}", timeout=2)
-            if response.status_code != 200:
+            # Get vehicle transfers from the server WITH ENHANCED ERROR HANDLING
+            try:
+                response = requests.get(f"{self.server_url}/api/vehicle_transfers?agent_id={self._agent_id}", timeout=5)
+                if response.status_code != 200:
+                    print(f"[TRAINING] Server returned status {response.status_code}, skipping vehicle transfers")
+                    return
+                    
+                vehicle_transfers = response.json()
+                if not vehicle_transfers:
+                    return
+                    
+            except requests.exceptions.Timeout:
+                print(f"[TRAINING] Server request timeout, skipping vehicle transfers this step")
                 return
-                
-            vehicle_transfers = response.json()
-            if not vehicle_transfers:
+            except requests.exceptions.ConnectionError:
+                print(f"[TRAINING] Server connection error, skipping vehicle transfers this step")
+                return
+            except requests.exceptions.RequestException as e:
+                print(f"[TRAINING] Server request failed: {e}, skipping vehicle transfers this step")
+                return
+            except Exception as e:
+                print(f"[TRAINING] Unexpected error getting transfers: {e}, skipping vehicle transfers this step")
                 return
                 
             print(f"[TRAINING] Received {len(vehicle_transfers)} vehicles to spawn in episode")
@@ -612,7 +644,11 @@ class Simulation:
                     # Skip if we've already processed this vehicle in any episode
                     if vehicle_id in self._processed_transfer_ids:
                         print(f"[TRAINING] Vehicle {vehicle_id} already processed in previous episode, skipping")
-                        requests.delete(f"{self.server_url}/api/vehicle_transfer/{vehicle_id}", timeout=2)
+                        # Safe delete with error handling
+                        try:
+                            requests.delete(f"{self.server_url}/api/vehicle_transfer/{vehicle_id}", timeout=2)
+                        except:
+                            pass  # Ignore delete errors to prevent crash
                         continue
                         
                     # Skip if we've already processed this vehicle in this batch
@@ -622,22 +658,32 @@ class Simulation:
                     # Track spawn attempts to prevent infinite retries
                     if vehicle_id in self._spawn_attempts and self._spawn_attempts[vehicle_id] >= 3:
                         print(f"[TRAINING] Vehicle {vehicle_id} has failed spawn attempts 3 times, removing from queue")
-                        requests.delete(f"{self.server_url}/api/vehicle_transfer/{vehicle_id}", timeout=2)
+                        try:
+                            requests.delete(f"{self.server_url}/api/vehicle_transfer/{vehicle_id}", timeout=2)
+                        except:
+                            pass  # Ignore delete errors
                         self._processed_transfer_ids.add(vehicle_id)
                         continue
                         
-                    # Check if vehicle already exists in simulation
+                    # Check if vehicle already exists in simulation WITH ERROR HANDLING
                     try:
                         current_vehicles = set(traci.vehicle.getIDList())
                         if vehicle_id in current_vehicles:
                             print(f"[TRAINING] Vehicle {vehicle_id} already exists, skipping spawn")
                             # Delete this transfer since vehicle is already spawned
-                            requests.delete(f"{self.server_url}/api/vehicle_transfer/{vehicle_id}", timeout=2)
+                            try:
+                                requests.delete(f"{self.server_url}/api/vehicle_transfer/{vehicle_id}", timeout=2)
+                            except:
+                                pass  # Ignore delete errors
                             processed_vehicles.add(vehicle_id)
                             self._processed_transfer_ids.add(vehicle_id)
                             continue
-                    except:
-                        pass  # Continue if we can't check current vehicles
+                    except traci.exceptions.TraCIException as e:
+                        print(f"[TRAINING] TraCI error checking vehicles: {e}")
+                        continue  # Skip this vehicle to prevent crash
+                    except Exception as e:
+                        print(f"[TRAINING] Error checking existing vehicles: {e}")
+                        continue  # Continue to prevent crash
                     
                     # Add to incoming vehicles list with spawn position
                     entry_road = None
@@ -655,11 +701,13 @@ class Simulation:
                             entry_road = 'E2TL'
                     
                     if entry_road:
-                        # Get the road length
+                        # Get the road length WITH ERROR HANDLING
                         try:
                             road_length = traci.edge.getLength(entry_road)
-                        except:
+                        except traci.exceptions.TraCIException:
                             road_length = 100.0  # Default length if we can't get it
+                        except Exception:
+                            road_length = 100.0  # Default length for any other error
                             
                         # Add spawn information to vehicle data
                         vehicle_data['spawn_road'] = entry_road
@@ -671,9 +719,10 @@ class Simulation:
                         processed_vehicles.add(vehicle_id)
                         
                 except Exception as e:
-                    print(f"Error processing vehicle transfer: {e}")
+                    print(f"[TRAINING] Error processing vehicle transfer: {e}")
+                    # Continue processing other vehicles instead of crashing
 
-            # Spawn any incoming vehicles
+            # Spawn any incoming vehicles WITH ENHANCED ERROR HANDLING
             spawned_count = 0
             max_spawn_per_step = 5  # Limit spawning to prevent overload
             
@@ -685,21 +734,24 @@ class Simulation:
                     # Generate a unique vehicle ID to prevent conflicts across intersections
                     unique_vehicle_id = f"{self._agent_id}_{original_vehicle_id}_{self._step}_{int(time.time() * 1000000) % 1000000}"
                     
-                    # Double-check vehicle doesn't exist before spawning (check both original and unique IDs)
+                    # Double-check vehicle doesn't exist before spawning WITH ERROR HANDLING
                     try:
                         current_vehicles = set(traci.vehicle.getIDList())
                         if original_vehicle_id in current_vehicles or unique_vehicle_id in current_vehicles:
                             print(f"[TRAINING] Vehicle {original_vehicle_id} already exists, skipping spawn")
                             # Delete this transfer since vehicle is already spawned
-                            requests.delete(f"{self.server_url}/api/vehicle_transfer/{original_vehicle_id}", timeout=2)
+                            try:
+                                requests.delete(f"{self.server_url}/api/vehicle_transfer/{original_vehicle_id}", timeout=2)
+                            except:
+                                pass  # Ignore delete errors
                             processed_vehicles.add(original_vehicle_id)
                             self._processed_transfer_ids.add(original_vehicle_id)
                             continue
                     except Exception as check_error:
-                        print(f"Warning: Could not check existing vehicles: {check_error}")
+                        print(f"[TRAINING] Warning: Could not check existing vehicles: {check_error}")
                         # Continue with spawning but be more careful
                     
-                    # Create route for the vehicle
+                    # Create route for the vehicle WITH ERROR HANDLING
                     route_id = f"training_route_{unique_vehicle_id}"
                     
                     # Determine the route edges based on the original route and entry road
@@ -725,7 +777,7 @@ class Simulation:
                                 route_edges.append(edge_map[to_dir])
                                 print(f"[TRAINING] Created route {route_id} with edges: {route_edges}")
                     
-                    # Add the route (check if it already exists first)
+                    # Add the route WITH COMPREHENSIVE ERROR HANDLING
                     try:
                         existing_routes = traci.route.getIDList()
                         if route_id not in existing_routes:
@@ -735,18 +787,28 @@ class Simulation:
                             route_id = f"training_route_fallback_{self._vehicle_counter}_{int(time.time() * 1000000)}"
                             traci.route.add(route_id, route_edges)
                             self._vehicle_counter += 1
-                    except Exception as route_error:
-                        print(f"Error creating training route {route_id}: {route_error}")
+                    except traci.exceptions.TraCIException as route_error:
+                        print(f"[TRAINING] TraCI error creating route {route_id}: {route_error}")
                         # Try to create a completely unique route ID
                         try:
                             route_id = f"emergency_route_{self._agent_id}_{self._vehicle_counter}_{int(time.time() * 1000000)}"
                             traci.route.add(route_id, route_edges)
                             self._vehicle_counter += 1
                         except Exception as unique_error:
-                            print(f"Failed to create any training route: {unique_error}")
-                            # Delete the transfer and continue
-                            requests.delete(f"{self.server_url}/api/vehicle_transfer/{original_vehicle_id}", timeout=2)
+                            print(f"[TRAINING] Failed to create any training route: {unique_error}")
+                            # Delete the transfer and continue instead of crashing
+                            try:
+                                requests.delete(f"{self.server_url}/api/vehicle_transfer/{original_vehicle_id}", timeout=2)
+                            except:
+                                pass
                             continue
+                    except Exception as route_error:
+                        print(f"[TRAINING] Unexpected error creating route: {route_error}")
+                        try:
+                            requests.delete(f"{self.server_url}/api/vehicle_transfer/{original_vehicle_id}", timeout=2)
+                        except:
+                            pass
+                        continue
 
                     # Attempt to spawn the vehicle with enhanced error handling
                     try:
@@ -768,7 +830,7 @@ class Simulation:
                             requests.delete(f"{self.server_url}/api/vehicle_transfer/{original_vehicle_id}", timeout=2)
                             print(f"[TRAINING] Deleted transfer record for {original_vehicle_id}")
                         except Exception as delete_error:
-                            print(f"Warning: Could not delete transfer record for {original_vehicle_id}: {delete_error}")
+                            print(f"[TRAINING] Warning: Could not delete transfer record for {original_vehicle_id}: {delete_error}")
                         
                         spawned_count += 1
                         
@@ -801,32 +863,35 @@ class Simulation:
                                     pass
                                     
                             except Exception as emergency_error:
-                                print(f"[TRAINING] Emergency spawn failed: {emergency_error}")
-                                # Give up on this vehicle and clean up
+                                print(f"[TRAINING] Emergency spawn also failed: {emergency_error}")
+                                # Skip this vehicle entirely to prevent crash
                                 try:
-                                    requests.delete(f"{self.server_url}/api/vehicle_transfer/{original_vehicle_id}", timeout=2)
-                                    self._processed_transfer_ids.add(original_vehicle_id)
+                                    requests.delete(f"{self.server_url}/api/vehicle_transfer/{original_vehicle_id}", timeout=2)  
                                 except:
                                     pass
                         else:
-                            print(f"[TRAINING] SUMO error spawning vehicle: {traci_error}")
-                            # Clean up transfer record
+                            print(f"[TRAINING] TraCI spawn error: {traci_error}")
+                            # Skip this vehicle to prevent crash
                             try:
                                 requests.delete(f"{self.server_url}/api/vehicle_transfer/{original_vehicle_id}", timeout=2)
-                                self._processed_transfer_ids.add(original_vehicle_id)
                             except:
                                 pass
-                        
-                except Exception as e:
-                    print(f"Error spawning transferred vehicle in training: {e}")
-                    # Clean up the transfer record
-                    try:
-                        if 'vehicle_id' in vehicle_data:
-                            requests.delete(f"{self.server_url}/api/vehicle_transfer/{vehicle_data['vehicle_id']}", timeout=2)
-                    except:
-                        pass
-                    # Don't break the loop, continue with next vehicle
+                                
+                    except Exception as spawn_error:
+                        print(f"[TRAINING] Unexpected error spawning vehicle: {spawn_error}")
+                        # Clean up and continue to prevent crash
+                        try:
+                            requests.delete(f"{self.server_url}/api/vehicle_transfer/{original_vehicle_id}", timeout=2)
+                        except:
+                            pass
+                
+                except Exception as vehicle_error:
+                    print(f"[TRAINING] Error processing vehicle for spawning: {vehicle_error}")
+                    # Continue with next vehicle to prevent crash
+                    continue
                     
         except Exception as e:
-            print(f"Error in _check_incoming_vehicles during training: {e}")
+            print(f"[TRAINING] Critical error in _check_incoming_vehicles: {e}")
+            print(f"[TRAINING] Continuing simulation to prevent crash...")
+            # Don't re-raise the exception to prevent crash
 

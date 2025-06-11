@@ -226,7 +226,7 @@ class Simulation:
             old_total_wait = current_total_wait
             self._reward_episode.append(reward)
             if self.communicator:
-                self.communicator.send_state(current_state, self._step, {
+                self.communicator.send_state(current_state.tolist(), self._step, {
                     'queue_length': self._get_queue_length(),
                     'current_phase': traci.trafficlight.getPhase("TL"),
                     'incoming_vehicles': {
@@ -619,6 +619,25 @@ class Simulation:
                         print(f"Error type: {type(e)}")
                         print(f"Error details: {str(e)}")
 
+                    # Send state update with vehicle transfer data
+                    current_state = self._get_state()
+                    self.communicator.send_state(current_state.tolist(), self._step, {
+                        'vehicle_transfer': {
+                            'vehicle_id': vehicle_data['vehicle_id'],
+                            'type': vehicle_data['type'],
+                            'route': vehicle_data['route'],
+                            'speed': vehicle_data['speed'],
+                            'lane': vehicle_data['spawn_lane'],
+                            'position': vehicle_data['spawn_road'],
+                            'waiting_time': vehicle_data['waiting_time'],
+                            'exit_direction': vehicle_data['exit_direction'],
+                            'from_agent': self.communicator.agent_id,
+                            'to_agent': vehicle_data['destination'],
+                            'timestamp': time.time()
+                        }
+                    })
+                    print(f"Sent vehicle {vehicle_data['vehicle_id']} to agent {vehicle_data['destination']} (with state data)")
+
                 except Exception as e:
                     print(f"Error spawning transferred vehicle: {e}")
                     # Put the vehicle back in the queue if there was an error
@@ -712,10 +731,11 @@ class Simulation:
                                     }
                                     
                                     # Send state update with vehicle transfer data
-                                    self.communicator.send_state(None, self._step, {
+                                    current_state = self._get_state()
+                                    self.communicator.send_state(current_state.tolist(), self._step, {
                                         'vehicle_transfer': transfer_data
                                     })
-                                    print(f"Sent vehicle {vehicle_id} to agent {destination_agent}")
+                                    print(f"Sent vehicle {vehicle_id} to agent {destination_agent} (with state data)")
                             
                 except traci.exceptions.TraCIException:
                     # Vehicle is no longer in simulation, skip it

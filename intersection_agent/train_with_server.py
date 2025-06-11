@@ -8,6 +8,7 @@ import datetime
 import numpy as np
 import configparser
 import socket
+import json
 
 #import from outside folder
 from training_simulation import Simulation
@@ -155,9 +156,13 @@ if __name__ == "__main__":
         config['memory_size_min']
     )
 
+    # Extract intersection number from agent_id (e.g., 'agent1' -> '1')
+    intersection_id = agent_id.replace('agent', '') if agent_id and agent_id.startswith('agent') else '1'
+    
     TrafficGen = TrafficGenerator(
         config['max_steps'], 
-        config['n_cars_generated']
+        config['n_cars_generated'],
+        intersection_id
     )
 
     Simulation = Simulation(
@@ -181,6 +186,10 @@ if __name__ == "__main__":
     episode = 0
     timestamp_start = datetime.datetime.now()
     
+    # Create backup directory
+    backup_dir = os.path.join(path, 'backups')
+    os.makedirs(backup_dir, exist_ok=True)
+    
     print("\n" + "="*50)
     print(f"STARTING SERVER TRAINING FOR INTERSECTION {agent_id}")
     print("="*50)
@@ -190,6 +199,88 @@ if __name__ == "__main__":
         epsilon = 1.0 - (episode / config['total_episodes'])  # set the epsilon for this episode according to epsilon-greedy policy
         simulation_time, training_time, avg_loss = Simulation.run(episode, epsilon)
         print('Simulation time:', simulation_time, 's - Training time:', training_time, 's - Avg Loss:', round(avg_loss, 4), '- Total:', round(simulation_time+training_time, 1), 's')
+        
+        # Backup model and results every 25 episodes
+        if episode != 0 and episode % 25 == 0:
+            backup_episode_dir = os.path.join(backup_dir, f'episode_{episode}')
+            os.makedirs(backup_episode_dir, exist_ok=True)
+            
+            # Save model backup
+            backup_model_name = f"intersection_{agent_id}_model_episode_{episode}.h5"
+            Model.save_model(backup_episode_dir, model_name=backup_model_name)
+            
+            # Save current training results
+            current_rewards = Simulation.reward_store.copy()
+            current_delays = Simulation.cumulative_wait_store.copy()
+            current_queues = Simulation.avg_queue_length_store.copy()
+            
+            # Save training data backup
+            training_backup = {
+                'episode': episode,
+                'agent_id': agent_id,
+                'server_url': server_url,
+                'rewards': [float(r) for r in current_rewards],
+                'delays': [float(d) for d in current_delays],
+                'queue_lengths': [float(q) for q in current_queues],
+                'timestamp': datetime.datetime.now().isoformat(),
+                'base_model_loaded': base_model_loaded,
+                'mapping_config': mapping_config,
+                'config': {
+                    'total_episodes': config['total_episodes'],
+                    'max_steps': config['max_steps'],
+                    'green_duration': config['green_duration'],
+                    'yellow_duration': config['yellow_duration'],
+                    'learning_rate': config['learning_rate'],
+                    'batch_size': config['batch_size']
+                }
+            }
+            
+            backup_data_file = os.path.join(backup_episode_dir, f'training_data_episode_{episode}.json')
+            with open(backup_data_file, 'w') as f:
+                json.dump(training_backup, f, indent=2)
+            
+            # Save plots backup
+            backup_plots_dir = os.path.join(backup_episode_dir, 'plots')
+            os.makedirs(backup_plots_dir, exist_ok=True)
+            
+            # Generate backup plots
+            import matplotlib.pyplot as plt
+            
+            # Plot rewards
+            plt.figure(figsize=(10, 6))
+            plt.plot(current_rewards)
+            plt.title(f'Episode Rewards - Agent {agent_id} (Episode {episode})')
+            plt.xlabel('Episode')
+            plt.ylabel('Cumulative Reward')
+            plt.grid(True)
+            plt.savefig(os.path.join(backup_plots_dir, f'rewards_episode_{episode}.png'), dpi=150, bbox_inches='tight')
+            plt.close()
+            
+            # Plot delays
+            plt.figure(figsize=(10, 6))
+            plt.plot(current_delays)
+            plt.title(f'Cumulative Delays - Agent {agent_id} (Episode {episode})')
+            plt.xlabel('Episode')
+            plt.ylabel('Cumulative Delay (s)')
+            plt.grid(True)
+            plt.savefig(os.path.join(backup_plots_dir, f'delays_episode_{episode}.png'), dpi=150, bbox_inches='tight')
+            plt.close()
+            
+            # Plot queue lengths
+            plt.figure(figsize=(10, 6))
+            plt.plot(current_queues)
+            plt.title(f'Average Queue Length - Agent {agent_id} (Episode {episode})')
+            plt.xlabel('Episode')
+            plt.ylabel('Queue Length')
+            plt.grid(True)
+            plt.savefig(os.path.join(backup_plots_dir, f'queues_episode_{episode}.png'), dpi=150, bbox_inches='tight')
+            plt.close()
+            
+            print(f"✓ Backup created at episode {episode}: {backup_episode_dir}")
+            print(f"  - Model: {backup_model_name}")
+            print(f"  - Data: training_data_episode_{episode}.json")
+            print(f"  - Plots: rewards, delays, queues")
+        
         episode += 1
 
     print("\n" + "="*50)

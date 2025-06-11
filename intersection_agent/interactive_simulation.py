@@ -345,7 +345,7 @@ class InteractiveSimulation(QObject):
                     # Update server with state and get new sync timing
                     if self._server_url:
                         # Send current state
-                        self._communicator.send_state(current_state, self._step, {
+                        self._communicator.send_state(current_state.tolist(), self._step, {
                             'queue_length': self._get_queue_length(),
                             'current_phase': traci.trafficlight.getPhase("TL"),
                             'incoming_vehicles': {
@@ -698,10 +698,11 @@ class InteractiveSimulation(QObject):
                                     }
                                     
                                     # Send state update with vehicle transfer data
-                                    self._communicator.send_state(None, self._step, {
+                                    current_state = self._get_state()
+                                    self._communicator.send_state(current_state.tolist(), self._step, {
                                         'vehicle_transfer': transfer_data
                                     })
-                                    print(f"Sent vehicle {vehicle_id} to agent {destination_agent}")
+                                    print(f"Sent vehicle {vehicle_id} to agent {destination_agent} (with state data)")
                                     
                                     # Emit signal for UI update if in interactive mode
                                     if hasattr(self, 'vehicle_updated'):

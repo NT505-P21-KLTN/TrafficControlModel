@@ -362,10 +362,11 @@ class TestingSimulationWithServer(Simulation):
                                     }
                                     
                                     # Send state update with vehicle transfer data
-                                    self._communicator.send_state(None, self._step, {
+                                    current_state = self._get_state()
+                                    self._communicator.send_state(current_state.tolist(), self._step, {
                                         'vehicle_transfer': transfer_data
                                     })
-                                    print(f"Sent vehicle {vehicle_id} to agent {destination_agent}")
+                                    print(f"Sent vehicle {vehicle_id} to agent {destination_agent} (with state data)")
                             
                 except traci.exceptions.TraCIException:
                     # Vehicle is no longer in simulation, skip it

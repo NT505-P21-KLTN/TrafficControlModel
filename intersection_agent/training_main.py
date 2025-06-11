@@ -156,6 +156,10 @@ def train_base_model(config, continue_from=None):
     timestamp_start = datetime.datetime.now()
     loss_history = []  # Track loss for each episode
     
+    # Create backup directory
+    backup_dir = os.path.join(path, 'backups')
+    os.makedirs(backup_dir, exist_ok=True)
+    
     while episode < config['total_episodes']:
         print('\n----- Base Training: Episode', str(episode+1), 'of', str(config['total_episodes']))
         epsilon = 1.0 - (episode / config['total_episodes'])
@@ -166,6 +170,90 @@ def train_base_model(config, continue_from=None):
         
         print('Simulation time:', simulation_time, 's - Training time:', training_time, 's - Avg Loss:', 
               round(avg_loss, 4), '- Total:', round(simulation_time+training_time, 1), 's')
+        
+        # Backup model and results every 25 episodes
+        if episode != 0 and episode % 25 == 0:
+            backup_episode_dir = os.path.join(backup_dir, f'episode_{episode}')
+            os.makedirs(backup_episode_dir, exist_ok=True)
+            
+            # Save model backup
+            backup_model_name = f"base_model_episode_{episode}.h5"
+            Model.save_model(backup_episode_dir, phase='base', model_name=backup_model_name, 
+                           intersection_id='1', config_file='training_settings.ini')
+            
+            # Save current training results
+            current_rewards = simulation.reward_store.copy()
+            current_delays = simulation.cumulative_wait_store.copy()
+            current_queues = simulation.avg_queue_length_store.copy()
+            current_losses = loss_history.copy()
+            
+            # Save training data backup
+            training_backup = {
+                'episode': episode,
+                'rewards': [float(r) for r in current_rewards],
+                'delays': [float(d) for d in current_delays],
+                'queue_lengths': [float(q) for q in current_queues],
+                'losses': [float(l) for l in current_losses],
+                'timestamp': datetime.datetime.now().isoformat(),
+                'config': {
+                    'total_episodes': config['total_episodes'],
+                    'max_steps': config['max_steps'],
+                    'green_duration': config['green_duration'],
+                    'yellow_duration': config['yellow_duration'],
+                    'learning_rate': config['learning_rate'],
+                    'batch_size': config['batch_size']
+                }
+            }
+            
+            backup_data_file = os.path.join(backup_episode_dir, f'training_data_episode_{episode}.json')
+            with open(backup_data_file, 'w') as f:
+                json.dump(training_backup, f, indent=2)
+            
+            # Save plots backup
+            backup_plots_dir = os.path.join(backup_episode_dir, 'plots')
+            os.makedirs(backup_plots_dir, exist_ok=True)
+            
+            # Generate backup plots
+            fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(15, 10))
+            
+            # Plot rewards
+            ax1.plot(current_rewards)
+            ax1.set_title(f'Episode Rewards (Episode {episode})')
+            ax1.set_xlabel('Episode')
+            ax1.set_ylabel('Total Reward')
+            ax1.grid(True)
+            
+            # Plot loss
+            ax2.plot(current_losses)
+            ax2.set_title(f'Training Loss (Episode {episode})')
+            ax2.set_xlabel('Episode')
+            ax2.set_ylabel('Average Loss')
+            ax2.grid(True)
+            
+            # Plot waiting times
+            ax3.plot(current_delays)
+            ax3.set_title(f'Cumulative Waiting Time (Episode {episode})')
+            ax3.set_xlabel('Episode')
+            ax3.set_ylabel('Waiting Time (s)')
+            ax3.grid(True)
+            
+            # Plot queue lengths
+            ax4.plot(current_queues)
+            ax4.set_title(f'Average Queue Length (Episode {episode})')
+            ax4.set_xlabel('Episode')
+            ax4.set_ylabel('Queue Length')
+            ax4.grid(True)
+            
+            plt.tight_layout()
+            plt.savefig(os.path.join(backup_plots_dir, f'training_results_episode_{episode}.png'), 
+                       dpi=150, bbox_inches='tight')
+            plt.close()
+            
+            print(f"✓ Backup created at episode {episode}: {backup_episode_dir}")
+            print(f"  - Model: {backup_model_name}")
+            print(f"  - Data: training_data_episode_{episode}.json")
+            print(f"  - Plots: comprehensive training results")
+        
         episode += 1
 
     print("\n" + "="*50)
