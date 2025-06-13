@@ -425,18 +425,46 @@ class Simulation:
         return state
 
     def _adjust_timing(self, sync_data):
+        """
+        Adjust timing based on sync data from the server
+        
+        Args:
+            sync_data: Dictionary containing sync timing data for this intersection
+        """
         if not sync_data:
             return
+            
+        # Store sync data for real-time coordination
+        self.sync_data = sync_data
+        
+        # Calculate optimal phase start time based on sync data
+        best_offset = 0.0
+        best_score = float('-inf')
+        
+        # Analyze all sync relationships to find optimal offset
         for target_id, timing in sync_data.items():
-            if 'optimal_offset_sec' in timing:
+            if 'optimal_offset_sec' in timing and 'coordination_quality' in timing:
                 offset = timing['optimal_offset_sec']
-                cycle_time = timing.get('cycle_time_sec', self._green_duration * 2)
-                if offset > 0:
-                    self._green_duration = min(self._green_duration + offset, cycle_time - self._yellow_duration)
-                else:
-                    self._green_duration = max(self._green_duration + offset, self._yellow_duration + 5)
-                print(f"Adjusted timing for sync with {target_id}: offset={offset}s, cycle={cycle_time}s, green={self._green_duration}s")
-                break
+                cycle_time = timing.get('cycle_time_sec', 60.0)
+                confidence = timing.get('confidence', 0.5)
+                
+                # Weight the offset by confidence and distance
+                distance = timing.get('distance_km', 1.0)
+                weight = confidence / (distance + 0.1)  # Closer intersections have more influence
+                score = weight
+                
+                if score > best_score:
+                    best_score = score
+                    best_offset = offset % cycle_time  # Keep within cycle time
+                    
+                print(f"Sync with {target_id}: offset={offset:.2f}s, confidence={confidence:.2f}, weight={weight:.3f}")
+        
+        # Store the calculated phase offset for use during simulation
+        self.phase_offset = best_offset
+        self.sync_cycle_time = sync_data.get(list(sync_data.keys())[0], {}).get('cycle_time_sec', 60.0) if sync_data else 60.0
+        
+        print(f"✅ Applied sync coordination: phase_offset={self.phase_offset:.2f}s, cycle_time={self.sync_cycle_time:.2f}s")
+        print(f"🚦 Green wave coordination active with {len(sync_data)} intersections")
 
     def _spawn_random_vehicle(self):
         """Spawn a random vehicle in the simulation"""

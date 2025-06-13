@@ -295,10 +295,13 @@ class SyncTrainer:
         if not self.model.load_models(model_path):
             logger.info("No existing model found, using new model")
         
-        # Reset buffer
-        buffer_path = os.path.join(self.model_dir, "replay_buffer.json")
-        if not self.replay_buffer.load_buffer(buffer_path):
-            logger.info("No existing buffer found, using new buffer")
+        # Clear replay buffer to prevent action dimension mismatch during topology changes
+        # This is necessary because old experiences may have different action dimensions
+        self.replay_buffer = ReplayBuffer(
+            capacity=self.replay_buffer.buffer.maxlen if hasattr(self.replay_buffer.buffer, 'maxlen') else 100000,
+            batch_size=self.batch_size
+        )
+        logger.info("Cleared replay buffer due to topology change")
         
         logger.info(f"Model reinitialized - State dim: {state_dim}, Action dim: {action_dim}, Max intersections: {max_intersections}")
     
@@ -522,35 +525,47 @@ class SyncTrainer:
                     # Calculate distance using coordinates
                     distance_km = self._calculate_distance(lat1, lon1, lat2, lon2)
                     
-                    # Calculate travel time based on distance and average speed
+                    # Get real-time speed from environment first (more accurate)
                     avg_speed = 40.0  # Default speed in km/h
+                    if hasattr(self.env, '_get_average_speed'):
+                        try:
+                            env_speed = self.env._get_average_speed(id1, id2)
+                            if env_speed > 0:
+                                avg_speed = env_speed
+                                logger.info(f"Using real-time speed from environment for {id1}-{id2}: {avg_speed:.2f} km/h")
+                        except Exception as e:
+                            logger.warning(f"Error getting speed from environment: {e}")
                     
-                    # Get speed data from traffic_data
-                    states1 = agent1_data.get('states', [])
-                    states2 = agent2_data.get('states', [])
-                    
-                    if states1 and states2:
-                        latest_state1 = states1[-1]
-                        latest_state2 = states2[-1]
+                    # If environment speed not available, get speed data from traffic_data
+                    if avg_speed == 40.0:  # Still default, try traffic data
+                        states1 = agent1_data.get('states', [])
+                        states2 = agent2_data.get('states', [])
                         
-                        speeds1 = latest_state1.get('traffic_data', {}).get('avg_speed', {})
-                        speeds2 = latest_state2.get('traffic_data', {}).get('avg_speed', {})
-                        
-                        all_speeds = []
-                        all_speeds.extend(speeds1.values())
-                        all_speeds.extend(speeds2.values())
-                        
-                        if all_speeds:
-                            # Filter out zero speeds and calculate average
-                            valid_speeds = [s for s in all_speeds if s > 0]
-                            if valid_speeds:
-                                avg_speed = sum(valid_speeds) / len(valid_speeds)
-                            else:
-                                logger.warning(f"No valid speeds found for {id1} -> {id2}, using default speed")
+                        if states1 and states2:
+                            latest_state1 = states1[-1]
+                            latest_state2 = states2[-1]
+                            
+                            speeds1 = latest_state1.get('traffic_data', {}).get('avg_speed', {})
+                            speeds2 = latest_state2.get('traffic_data', {}).get('avg_speed', {})
+                            
+                            all_speeds = []
+                            all_speeds.extend(speeds1.values())
+                            all_speeds.extend(speeds2.values())
+                            
+                            if all_speeds:
+                                # Filter out zero speeds and calculate average
+                                valid_speeds = [s for s in all_speeds if s > 0]
+                                if valid_speeds:
+                                    avg_speed = sum(valid_speeds) / len(valid_speeds)
+                                    logger.info(f"Using traffic data speed for {id1}-{id2}: {avg_speed:.2f} km/h")
+                                else:
+                                    logger.warning(f"No valid speeds found for {id1} -> {id2}, using default speed")
                     
                     # Ensure minimum speed to prevent division by zero
                     MIN_SPEED = 5.0  # Minimum speed in km/h
-                    avg_speed = max(avg_speed, MIN_SPEED)
+                    if avg_speed < MIN_SPEED:
+                        logger.warning(f"Speed {avg_speed:.2f} below minimum, using {MIN_SPEED} km/h")
+                        avg_speed = MIN_SPEED
                     
                     # Calculate travel time
                     travel_time_sec = (distance_km / avg_speed) * 3600  # Convert to seconds

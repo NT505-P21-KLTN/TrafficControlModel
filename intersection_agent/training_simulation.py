@@ -93,6 +93,13 @@ class Simulation:
             self.communicator.start_background_sync()
         else:
             self.communicator = None
+            
+        # Initialize sync coordination variables
+        self.phase_offset = 0.0
+        self.sync_cycle_time = 60.0
+        self.sync_data = {}
+        self.last_sync_update = 0
+        self.sync_update_interval = 30  # Check for sync updates every 30 steps
 
 
     def run(self, episode, epsilon):
@@ -130,6 +137,13 @@ class Simulation:
                 if self.communicator:
                     self._track_vehicles()
                     self._check_incoming_vehicles()
+                    
+                    # Check for sync updates periodically during simulation
+                    if self._step - self.last_sync_update >= self.sync_update_interval:
+                        sync_data = self.communicator.get_sync_timing()
+                        if sync_data:
+                            self._adjust_timing(sync_data)
+                            self.last_sync_update = self._step
 
                 # get current state of the intersection
                 current_state = self._get_state()
@@ -146,14 +160,17 @@ class Simulation:
                 # choose the light phase to activate, based on the current state of the intersection
                 action = self._choose_action(current_state, epsilon)
 
+                # Apply phase offset timing before executing action
+                adjusted_green_duration = self._apply_phase_coordination(action)
+
                 # if the chosen phase is different from the last phase, activate the yellow phase
                 if self._step != 0 and old_action != action:
                     self._set_yellow_phase(old_action)
                     self._simulate(self._yellow_duration)
 
-                # execute the phase selected before
+                # execute the phase selected before with coordinated timing
                 self._set_green_phase(action)
-                self._simulate(self._green_duration)
+                self._simulate(adjusted_green_duration)
 
                 # saving variables for later & accumulate reward
                 old_state = current_state
@@ -443,23 +460,77 @@ class Simulation:
         if not sync_data:
             return
             
-        # Get the optimal offset for each connected intersection
+        # Store sync data for real-time coordination
+        self.sync_data = sync_data
+        
+        # Calculate optimal phase start time based on sync data
+        best_offset = 0.0
+        best_score = float('-inf')
+        
+        # Analyze all sync relationships to find optimal offset
         for target_id, timing in sync_data.items():
-            if 'optimal_offset_sec' in timing:
+            if 'optimal_offset_sec' in timing and 'coordination_quality' in timing:
                 offset = timing['optimal_offset_sec']
-                cycle_time = timing.get('cycle_time_sec', self._green_duration * 2)
+                cycle_time = timing.get('cycle_time_sec', 60.0)
+                confidence = timing.get('confidence', 0.5)
                 
-                # Adjust green duration based on sync timing
-                # This is a simple adjustment - you might want to make this more sophisticated
-                if offset > 0:
-                    # Extend green duration to accommodate offset
-                    self._green_duration = min(self._green_duration + offset, cycle_time - self._yellow_duration)
-                else:
-                    # Reduce green duration to accommodate offset
-                    self._green_duration = max(self._green_duration + offset, self._yellow_duration + 5)
+                # Weight the offset by confidence and distance
+                distance = timing.get('distance_km', 1.0)
+                weight = confidence / (distance + 0.1)  # Closer intersections have more influence
+                score = weight
                 
-                print(f"Adjusted timing for sync with {target_id}: offset={offset}s, cycle={cycle_time}s, green={self._green_duration}s")
-                break  # For now, just use the first sync timing we find
+                if score > best_score:
+                    best_score = score
+                    best_offset = offset % cycle_time  # Keep within cycle time
+                    
+                print(f"Sync with {target_id}: offset={offset:.2f}s, confidence={confidence:.2f}, weight={weight:.3f}")
+        
+        # Store the calculated phase offset for use during simulation
+        self.phase_offset = best_offset
+        self.sync_cycle_time = sync_data.get(list(sync_data.keys())[0], {}).get('cycle_time_sec', 60.0) if sync_data else 60.0
+        
+        print(f"✅ Applied sync coordination: phase_offset={self.phase_offset:.2f}s, cycle_time={self.sync_cycle_time:.2f}s")
+        print(f"🚦 Green wave coordination active with {len(sync_data)} intersections")
+
+    def _apply_phase_coordination(self, action):
+        """
+        Apply phase coordination based on sync data to create green waves
+        
+        Args:
+            action: The chosen traffic light action
+            
+        Returns:
+            adjusted_green_duration: Modified green duration for coordination
+        """
+        base_green_duration = self._green_duration
+        
+        if not hasattr(self, 'sync_data') or not self.sync_data:
+            return base_green_duration
+            
+        # Calculate timing adjustment based on current simulation time and phase offset
+        current_cycle_position = (self._step % self.sync_cycle_time) / self.sync_cycle_time
+        target_cycle_position = (self.phase_offset % self.sync_cycle_time) / self.sync_cycle_time
+        
+        # Calculate phase difference
+        phase_diff = target_cycle_position - current_cycle_position
+        if phase_diff > 0.5:
+            phase_diff -= 1.0
+        elif phase_diff < -0.5:
+            phase_diff += 1.0
+            
+        # Apply timing adjustment (smaller adjustments for smoother coordination)
+        timing_adjustment = phase_diff * self.sync_cycle_time * 0.1  # Scale adjustment
+        
+        # Adjust green duration within reasonable bounds
+        adjusted_duration = base_green_duration + timing_adjustment
+        adjusted_duration = max(self._green_duration * 0.5, min(adjusted_duration, self._green_duration * 1.5))
+        
+        # Log coordination details periodically
+        if self._step % 100 == 0:
+            print(f"🔄 Sync coordination - Step: {self._step}, Phase diff: {phase_diff:.3f}, "
+                  f"Adjustment: {timing_adjustment:.2f}s, Duration: {adjusted_duration:.2f}s")
+        
+        return int(adjusted_duration)
 
 
     def _track_vehicles(self):
