@@ -14,13 +14,13 @@ import xml.etree.ElementTree as ET
 from collections import deque
 import matplotlib
 matplotlib.use('Agg')  # Use non-interactive backend
-from firebase_service import FirebaseService
+# from mock_firebase_service import FirebaseService
 
 app = Flask(__name__)
 CORS(app)  # Cho phép truy cập từ Flutter Web
 
-# Initialize Firebase service
-firebase = FirebaseService()
+# Initialize Firebase service - TEMPORARILY DISABLED
+# firebase = FirebaseService()
 
 # Global variables
 active_agents = {}
@@ -389,14 +389,20 @@ def serve_static(filename):
 @app.route('/api/status', methods=['GET'])
 def get_status():
     """Get overall system status"""
-    status = firebase.get_system_status()
+    # status = firebase.get_system_status()
+    status = {
+        'status': 'active',
+        'last_updated': datetime.now().isoformat(),
+        'online_agents': len([a for a in agent_data.values() if a.get('online', False)]),
+        'total_agents': len(agent_data)
+    }
     return jsonify(status)
 
 @app.route('/api/data', methods=['GET'])
 def get_data():
     """Get all agent data"""
-    agents = firebase.get_all_agents()
-    return jsonify(agents)
+    # agents = firebase.get_all_agents()
+    return jsonify(agent_data)
 
 @app.route('/api/agent/<agent_id>', methods=['GET'])
 def get_agent(agent_id):
@@ -436,61 +442,62 @@ def get_coordination(agent_id):
 def update_agent_config(agent_id):
     """Update agent configuration"""
     config = request.json
-    firebase.update_agent_config(agent_id, config)
+    # firebase.update_agent_config(agent_id, config)
     return jsonify({'status': 'success'})
 
 @app.route('/api/agent/<agent_id>/metrics', methods=['POST'])
 def update_agent_metrics(agent_id):
     """Update agent metrics"""
     metrics = request.json
-    firebase.update_agent_metrics(agent_id, metrics)
+    # firebase.update_agent_metrics(agent_id, metrics)
     return jsonify({'status': 'success'})
 
 @app.route('/api/agent/<agent_id>/status', methods=['POST'])
 def update_agent_status(agent_id):
     """Update agent status"""
     status = request.json.get('status')
-    firebase.update_agent_status(agent_id, status)
+    # firebase.update_agent_status(agent_id, status)
     return jsonify({'status': 'success'})
 
 @app.route('/api/agent/<agent_id>/location', methods=['POST'])
 def update_agent_location(agent_id):
     """Update agent location"""
     data = request.json
-    firebase.update_agent_location(
-        agent_id,
-        data.get('latitude'),
-        data.get('longitude')
-    )
+    # firebase.update_agent_location(
+    #     agent_id,
+    #     data.get('latitude'),
+    #     data.get('longitude')
+    # )
     return jsonify({'status': 'success'})
 
 @app.route('/api/agent/<agent_id>/performance', methods=['POST'])
 def update_agent_performance(agent_id):
     """Update agent performance metrics"""
     performance_data = request.json
-    firebase.update_agent_performance(agent_id, performance_data)
+    # firebase.update_agent_performance(agent_id, performance_data)
     return jsonify({'status': 'success'})
 
 @app.route('/api/agent/<agent_id>/log', methods=['POST'])
 def add_agent_log(agent_id):
     """Add agent log entry"""
     data = request.json
-    firebase.add_agent_log(
-        agent_id,
-        data.get('message'),
-        data.get('level', 'INFO')
-    )
+    # firebase.add_agent_log(
+    #     agent_id,
+    #     data.get('message'),
+    #     data.get('level', 'INFO')
+    # )
     return jsonify({'status': 'success'})
 
 def update_system_status():
     """Periodically update system status"""
     while True:
-        agents = firebase.get_all_agents()
-        if agents:
-            total_agents = len(agents)
-            online_agents = sum(1 for agent in agents.values()
-                                if agent.get('status') == 'online')
-            firebase.update_system_status(total_agents, online_agents)
+        # agents = firebase.get_all_agents()
+        if agent_data:
+            total_agents = len(agent_data)
+            online_agents = sum(1 for agent in agent_data.values()
+                                if agent.get('online', False))
+            # firebase.update_system_status(total_agents, online_agents)
+            print(f"📊 System Status: {online_agents}/{total_agents} agents online")
         time.sleep(5)
 
 @app.route('/api/latest_charts', methods=['GET'])
@@ -575,10 +582,19 @@ def receive_updates():
         # Handle one-time topology data
         if 'topology' in data and 'topology' not in agent_data[agent_id]:
             agent_data[agent_id]['topology'] = data['topology']
+            log_event(f"Received topology data for {agent_id}: {data['topology']}")
             try:
                 generate_intersection_map()
             except Exception as e:
                 log_event(f"Error generating map: {e}")
+            
+            # Immediately save the updated agent data with topology
+            try:
+                with open('server_data/agent_data.json', 'w') as f:
+                    json.dump(agent_data, f, indent=2)
+                log_event(f"Saved topology data for {agent_id} to agent_data.json")
+            except Exception as e:
+                log_event(f"Error saving agent data: {e}")
 
         # ACCUMULATE metrics data rather than replacing
         if 'rewards' in data and data['rewards']:
@@ -596,10 +612,10 @@ def receive_updates():
             # Update online status based on the new status
             agent_data[agent_id]['online'] = data['status'] != 'terminated'
             # Update status in Firebase
-            firebase.update_agent_status(agent_id, data['status'])
+            # firebase.update_agent_status(agent_id, data['status'])
 
         # Update system status
-        firebase.update_system_status(len(agent_data), sum(1 for agent in agent_data.values() if agent.get('online', False)))
+        # firebase.update_system_status(len(agent_data), sum(1 for agent in agent_data.values() if agent.get('online', False)))
 
         return jsonify({'status': 'success'})
     except Exception as e:

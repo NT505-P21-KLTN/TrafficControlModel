@@ -195,8 +195,8 @@ class AgentCommunicatorTraining:
             # Replace states with filtered valid states only
             send_data['states'] = valid_states
             
-            # Add topology data only on first sync
-            if not self.topology_sent:
+            # Add topology data only on first sync or if forced to resend
+            if not self.topology_sent or len(send_data['states']) == 0:
                 topology_data = {}
                 
                 # Add mapping configuration if available

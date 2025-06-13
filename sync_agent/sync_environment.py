@@ -24,7 +24,7 @@ class IntersectionSyncEnv(gym.Env):
     Action: Offset adjustments between traffic signals
     Reward: Reduced waiting time and queue lengths across intersections
     """
-    def __init__(self, intersection_data=None, max_offset=120):
+    def __init__(self, intersection_data=None, max_offset=120, is_synthetic=False):
         super(IntersectionSyncEnv, self).__init__()
         
         # Store intersection data that will be updated from agents
@@ -34,6 +34,9 @@ class IntersectionSyncEnv(gym.Env):
         
         # Max allowed offset in seconds
         self.max_offset = max_offset
+        
+        # Whether to use synthetic speed data (realistic urban speeds)
+        self.is_synthetic = is_synthetic
         
         # Action space: Offset adjustments between each pair of connected intersections
         # For each pair, we define offset as percentage of cycle time (0-100%)
@@ -154,26 +157,34 @@ class IntersectionSyncEnv(gym.Env):
                         avg_speed_kmh = 40.0  # Default average speed
                         speed_source = "default"
                         
-                        # Get actual speed if available
-                        if ('states' in self.intersection_data[id1] and 
-                            self.intersection_data[id1]['states']):
-                            states = self.intersection_data[id1]['states']
-                            if ('traffic_data' in states[-1] and 
-                                'avg_speed' in states[-1]['traffic_data']):
-                                speeds = states[-1]['traffic_data']['avg_speed']
-                                # Convert m/s to km/h and average all directions
-                                if speeds:
-                                    avg_speed_kmh = sum(speeds.values()) * 3.6 / len(speeds)
-                                    # Ensure minimum speed to prevent division by zero
-                                    avg_speed_kmh = max(avg_speed_kmh, 5.0)  # Minimum 5 km/h
-                                    speed_source = "realtime"
-                                    logger.info(f"Using real-time speed data for {id1}-{id2}: {avg_speed_kmh:.2f} km/h")
-                                else:
-                                    logger.warning(f"No speed values available for {id1}-{id2}, using default speed")
-                            else:
-                                logger.warning(f"No traffic data available for {id1}-{id2}, using default speed")
+                        if self.is_synthetic:
+                            # Use realistic urban speeds for synthetic mode
+                            import random
+                            # Urban intersection speeds: 25-45 km/h based on traffic conditions
+                            avg_speed_kmh = random.uniform(25.0, 45.0)
+                            speed_source = "synthetic"
+                            logger.info(f"Using synthetic speed data for {id1}-{id2}: {avg_speed_kmh:.2f} km/h")
                         else:
-                            logger.warning(f"No states data available for {id1}-{id2}, using default speed")
+                            # Get actual speed from real-time data if available
+                            if ('states' in self.intersection_data[id1] and 
+                                self.intersection_data[id1]['states']):
+                                states = self.intersection_data[id1]['states']
+                                if ('traffic_data' in states[-1] and 
+                                    'avg_speed' in states[-1]['traffic_data']):
+                                    speeds = states[-1]['traffic_data']['avg_speed']
+                                    # Convert m/s to km/h and average all directions
+                                    if speeds:
+                                        avg_speed_kmh = sum(speeds.values()) * 3.6 / len(speeds)
+                                        # Ensure minimum speed to prevent division by zero
+                                        avg_speed_kmh = max(avg_speed_kmh, 5.0)  # Minimum 5 km/h
+                                        speed_source = "realtime"
+                                        logger.info(f"Using real-time speed data for {id1}-{id2}: {avg_speed_kmh:.2f} km/h")
+                                    else:
+                                        logger.warning(f"No speed values available for {id1}-{id2}, using default speed")
+                                else:
+                                    logger.warning(f"No traffic data available for {id1}-{id2}, using default speed")
+                            else:
+                                logger.warning(f"No states data available for {id1}-{id2}, using default speed")
                         
                         # Calculate travel time in seconds
                         travel_time_sec = (distance_km / avg_speed_kmh) * 3600
@@ -316,26 +327,55 @@ class IntersectionSyncEnv(gym.Env):
         }
     
     def _calculate_reward(self, current_metrics):
-        """Calculate reward based on improvement in metrics"""
-        reward = 0
+        """Improved reward function designed for stable convergence"""
         
-        # If we have history, compare with previous metrics
-        if len(self.history['waiting_times']) > 1:
-            # Calculate improvement in waiting time
-            prev_waiting = self.history['waiting_times'][-2]
-            curr_waiting = current_metrics['avg_waiting_time']
-            waiting_improvement = prev_waiting - curr_waiting
-            
-            # Calculate improvement in queue length
-            prev_queue = self.history['queue_lengths'][-2]
-            curr_queue = current_metrics['avg_queue_length']
-            queue_improvement = prev_queue - curr_queue
-            
-            # Combine improvements as reward
-            # Give more weight to waiting time improvement
-            reward = 0.7 * waiting_improvement + 0.3 * queue_improvement
+        # Base reward components
+        waiting_time = current_metrics['avg_waiting_time']
+        queue_length = current_metrics['avg_queue_length']
         
-        return reward
+        # Normalize metrics to reasonable ranges
+        normalized_waiting = np.clip(waiting_time / 100.0, 0, 5)  # Cap at 5x normal
+        normalized_queue = np.clip(queue_length / 20.0, 0, 5)    # Cap at 5x normal
+        
+        # Base reward (negative penalties)
+        waiting_penalty = -normalized_waiting * 0.6
+        queue_penalty = -normalized_queue * 0.4
+        base_reward = waiting_penalty + queue_penalty
+        
+        # Improvement bonus (compare to recent history)
+        improvement_bonus = 0
+        if len(self.history['waiting_times']) >= 5:
+            recent_waiting = list(self.history['waiting_times'])[-5:]
+            recent_queue = list(self.history['queue_lengths'])[-5:]
+            
+            # Calculate recent averages
+            avg_recent_waiting = np.mean(recent_waiting)
+            avg_recent_queue = np.mean(recent_queue)
+            
+            # Reward improvement
+            if waiting_time < avg_recent_waiting:
+                improvement_bonus += 0.2 * (avg_recent_waiting - waiting_time) / 100.0
+            if queue_length < avg_recent_queue:
+                improvement_bonus += 0.1 * (avg_recent_queue - queue_length) / 20.0
+        
+        # Stability bonus (reward consistent performance)
+        stability_bonus = 0
+        if len(self.history['waiting_times']) >= 10:
+            recent_std = np.std(list(self.history['waiting_times'])[-10:])
+            if recent_std < 20:  # Low variance is good
+                stability_bonus = 0.1 * (20 - recent_std) / 20.0
+        
+        # Combine all components
+        total_reward = base_reward + improvement_bonus + stability_bonus
+        
+        # Add small random noise for exploration
+        noise = np.random.normal(0, 0.01)
+        final_reward = total_reward + noise
+        
+        # Reasonable bounds
+        final_reward = np.clip(final_reward, -3.0, 1.0)
+        
+        return final_reward
     
     def _get_state(self):
         """Get the current state representation"""

@@ -3,6 +3,7 @@ from tensorflow.keras.layers import Dense, Input, BatchNormalization, Activation
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers.legacy import Adam
 import numpy as np
+import os
 
 class SyncDRLModel:
     """Deep Reinforcement Learning model for traffic signal synchronization"""
@@ -72,6 +73,8 @@ class SyncDRLModel:
         # Convert to tensor if not already
         if not isinstance(state, tf.Tensor):
             state = tf.convert_to_tensor(state, dtype=tf.float32)
+        else:
+            state = tf.cast(state, tf.float32)  # Ensure float32
         
         # Add batch dimension if needed
         if len(state.shape) == 1:
@@ -86,6 +89,28 @@ class SyncDRLModel:
             state = state[:, :self.max_state_dim]
         
         return state
+    
+    def _preprocess_actions(self, actions):
+        """Preprocess actions to handle variable dimensions"""
+        # Convert to tensor if not already
+        if not isinstance(actions, tf.Tensor):
+            actions = tf.convert_to_tensor(actions, dtype=tf.float32)
+        else:
+            actions = tf.cast(actions, tf.float32)  # Ensure float32
+        
+        # Add batch dimension if needed
+        if len(actions.shape) == 1:
+            actions = tf.expand_dims(actions, axis=0)
+        
+        # Pad or truncate actions to expected action_dim
+        current_dim = tf.shape(actions)[1]
+        if current_dim < self.action_dim:
+            padding = tf.zeros((tf.shape(actions)[0], self.action_dim - current_dim), dtype=tf.float32)
+            actions = tf.concat([actions, padding], axis=1)
+        elif current_dim > self.action_dim:
+            actions = actions[:, :self.action_dim]
+        
+        return actions
     
     def _build_actor(self, hidden_sizes):
         """Build the actor network (policy)"""
@@ -152,12 +177,12 @@ class SyncDRLModel:
     
     def policy(self, state, deterministic=False, noise_scale=0.1):
         """
-        Get action from policy/actor network
+        Get action from policy/actor network with proper SAC exploration
         
         Args:
             state: Current state
-            deterministic: If True, return deterministic action, else add exploration noise
-            noise_scale: Scale of exploration noise
+            deterministic: If True, return deterministic action, else sample from policy
+            noise_scale: Scale of exploration noise (for compatibility)
             
         Returns:
             Action vector
@@ -166,20 +191,30 @@ class SyncDRLModel:
         state = self._preprocess_state(state)
         
         # Get action from policy
-        action = self.actor.predict(state)[0]
+        action_probs = self.actor.predict(state, verbose=0)[0]
         
         # Ensure action has correct shape
-        if action.shape[0] != self.action_dim:
-            if action.shape[0] > self.action_dim:
-                action = action[:self.action_dim]
+        if action_probs.shape[0] != self.action_dim:
+            if action_probs.shape[0] > self.action_dim:
+                action_probs = action_probs[:self.action_dim]
             else:
-                padding = np.zeros(self.action_dim - action.shape[0], dtype=np.float32)
-                action = np.concatenate([action, padding])
+                padding = np.zeros(self.action_dim - action_probs.shape[0], dtype=np.float32)
+                action_probs = np.concatenate([action_probs, padding])
         
-        # Add exploration noise if not deterministic
-        if not deterministic:
-            noise = np.random.normal(0, noise_scale, size=self.action_dim)
-            action = np.clip(action + noise, 0.0, 1.0)
+        if deterministic:
+            # For deterministic policy, use the mean
+            action = action_probs
+        else:
+            # For stochastic policy, add noise for exploration
+            # Use beta distribution for bounded actions (0,1)
+            alpha = action_probs * 10 + 1  # Shape parameter
+            beta = (1 - action_probs) * 10 + 1  # Shape parameter
+            
+            # Sample from beta distribution
+            action = np.random.beta(alpha, beta)
+            
+            # Ensure bounds
+            action = np.clip(action, 0.0, 1.0)
         
         return action
     
@@ -189,7 +224,7 @@ class SyncDRLModel:
         # Preprocess states and ensure correct types
         states = self._preprocess_state(states)
         next_states = self._preprocess_state(next_states)
-        actions = tf.cast(actions, tf.float32)
+        actions = self._preprocess_actions(actions)
         rewards = tf.cast(rewards, tf.float32)
         dones = tf.cast(dones, tf.bool)
         
@@ -204,8 +239,14 @@ class SyncDRLModel:
             # Take minimum of both critics to mitigate overestimation
             target_q = tf.minimum(target_q1, target_q2)
             
+            # Clip rewards to prevent extreme values
+            rewards = tf.clip_by_value(rewards, -100.0, 100.0)
+            
             # Compute target value (Bellman equation)
             q_target = rewards + tf.cast(1 - tf.cast(dones, tf.float32), tf.float32) * self.gamma * target_q
+            
+            # Clip target Q values to prevent explosion
+            q_target = tf.clip_by_value(q_target, -1000.0, 1000.0)
             
             # Get current Q estimates
             current_q1 = self.critic_1([states, actions])
@@ -286,11 +327,45 @@ class SyncDRLModel:
     def load_models(self, path):
         """Load model weights"""
         try:
-            self.actor.load_weights(f"{path}_actor.h5")
-            self.critic_1.load_weights(f"{path}_critic1.h5")
-            self.critic_2.load_weights(f"{path}_critic2.h5")
+            actor_path = f"{path}_actor.h5"
+            critic1_path = f"{path}_critic1.h5"
+            critic2_path = f"{path}_critic2.h5"
+            
+            print(f"🔍 Attempting to load models from:")
+            print(f"  Actor: {actor_path}")
+            print(f"  Critic1: {critic1_path}")
+            print(f"  Critic2: {critic2_path}")
+            
+            # Check if files exist
+            if not os.path.exists(actor_path):
+                print(f"❌ Actor file not found: {actor_path}")
+                return False
+            if not os.path.exists(critic1_path):
+                print(f"❌ Critic1 file not found: {critic1_path}")
+                return False
+            if not os.path.exists(critic2_path):
+                print(f"❌ Critic2 file not found: {critic2_path}")
+                return False
+            
+            print("✅ All model files found, attempting to load...")
+            
+            self.actor.load_weights(actor_path)
+            print("✅ Actor weights loaded")
+            
+            self.critic_1.load_weights(critic1_path)
+            print("✅ Critic1 weights loaded")
+            
+            self.critic_2.load_weights(critic2_path)
+            print("✅ Critic2 weights loaded")
+            
+            # Update target networks
             self.target_critic_1.set_weights(self.critic_1.get_weights())
             self.target_critic_2.set_weights(self.critic_2.get_weights())
+            print("✅ Target networks updated")
+            
             return True
-        except:
+        except Exception as e:
+            print(f"❌ Error loading models: {e}")
+            import traceback
+            traceback.print_exc()
             return False

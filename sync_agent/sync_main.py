@@ -17,14 +17,18 @@ def main():
     parser.add_argument('--output-path', type=str,
                         default='../central_server/server_data/sync_times.json',
                         help='Path to save synchronization data')
-    parser.add_argument('--update-interval', type=int, default=60,
+    parser.add_argument('--update-interval', type=int, default=30,
                         help='Seconds between updates from agent data')
-    parser.add_argument('--train-interval', type=int, default=30,
+    parser.add_argument('--train-interval', type=int, default=20,
                         help='Seconds between training batches')
-    parser.add_argument('--save-interval', type=int, default=3600,
+    parser.add_argument('--save-interval', type=int, default=300,
                         help='Seconds between model saves')
-    parser.add_argument('--batch-size', type=int, default=2, help='Training batch size')
-    parser.add_argument('--min-buffer-size', type=int, default=2, help='Minimum buffer size before training')
+    parser.add_argument('--batch-size', type=int, default=128, help='Training batch size')
+    parser.add_argument('--min-buffer-size', type=int, default=1000, help='Minimum buffer size before training')
+    parser.add_argument('--buffer-capacity', type=int, default=120000, help='Replay buffer capacity')
+    parser.add_argument('--episodes', type=int, default=300, help='Number of training episodes')
+    parser.add_argument('--steps-per-episode', type=int, default=45, help='Steps per episode')
+    parser.add_argument('--warmup-episodes', type=int, default=60, help='Warmup episodes before training')
     
     args = parser.parse_args()
     
@@ -37,7 +41,8 @@ def main():
         train_interval=args.train_interval,
         save_interval=args.save_interval,
         batch_size=args.batch_size,
-        min_buffer_size=args.min_buffer_size
+        min_buffer_size=args.min_buffer_size,
+        buffer_capacity=args.buffer_capacity
     )
     
     # Start training
