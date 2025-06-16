@@ -57,6 +57,10 @@ class AgentCommunicatorTraining:
         self.sync_interval = 30  # seconds
         self.background_thread = None
         self.running = False
+
+        # Initialize connected agents tracking
+        self.connected_agents = {}  # Store connected agent info
+        self.direct_connections = {}  # Store direct connections
         
         # Create a directory to store data locally in case of connection issues
         self.backup_dir = f'agent_{self.agent_id}_data'

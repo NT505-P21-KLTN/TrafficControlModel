@@ -85,7 +85,8 @@ def set_sumo(gui, sumocfg_file_name, max_steps, server_config_file='server_confi
         intersection_id = '1'
     
     # setting the cmd command to run sumo at simulation time
-    sumo_cmd = [sumoBinary, "-c", os.path.join(f'intersection_{intersection_id}', sumocfg_file_name), "--no-step-log", "true", "--waiting-time-memory", str(max_steps)]
+    # sumo_cmd = [sumoBinary, "-c", os.path.join(f'intersection_{intersection_id}', sumocfg_file_name), "--no-step-log", "true", "--waiting-time-memory", str(max_steps)]
+    sumo_cmd = [sumoBinary, "-c", os.path.join(f'intersection_{intersection_id}', sumocfg_file_name), "--no-step-log", "true", "--waiting-time-memory", str(max_steps), "--num-clients", "3"]
 
     return sumo_cmd
 

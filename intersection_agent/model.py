@@ -38,7 +38,8 @@ class TrainModel:
 
         model = keras.Model(inputs=inputs, outputs=outputs, name='my_model')
         # Use the legacy optimizer to avoid the M1/M2 Mac performance issues
-        self.optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=self._learning_rate)
+        # self.optimizer = tf.keras.optimizers.legacy.Adam(learning_rate=self._learning_rate)
+        self.optimizer = Adam(learning_rate=self._learning_rate)
         model.compile(loss=losses.mean_squared_error, optimizer=self.optimizer)
         return model
     

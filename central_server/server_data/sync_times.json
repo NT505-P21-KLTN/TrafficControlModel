@@ -11,18 +11,18 @@
     "agent3": {
       "distance_km": 0.63,
       "travel_time_sec": 56.72,
-      "optimal_offset_sec": 0.0,
+      "optimal_offset_sec": 38.0,
       "cycle_time_sec": 38,
       "drl_optimized": true,
       "avg_speed_kmh": 40.0
     },
     "agent4": {
       "distance_km": 0.88,
-      "travel_time_sec": 636.12,
+      "travel_time_sec": 79.51,
       "optimal_offset_sec": 38.0,
       "cycle_time_sec": 38,
       "drl_optimized": true,
-      "avg_speed_kmh": 5.0
+      "avg_speed_kmh": 40.0
     }
   },
   "agent2": {
@@ -44,18 +44,18 @@
     },
     "agent4": {
       "distance_km": 1.63,
-      "travel_time_sec": 1176.7,
+      "travel_time_sec": 147.09,
       "optimal_offset_sec": 38.0,
       "cycle_time_sec": 38,
       "drl_optimized": true,
-      "avg_speed_kmh": 5.0
+      "avg_speed_kmh": 40.0
     }
   },
   "agent3": {
     "agent1": {
       "distance_km": 0.63,
       "travel_time_sec": 56.72,
-      "optimal_offset_sec": 0.0,
+      "optimal_offset_sec": 38.0,
       "cycle_time_sec": 38,
       "drl_optimized": true,
       "avg_speed_kmh": 40.0
@@ -70,37 +70,37 @@
     },
     "agent4": {
       "distance_km": 0.59,
-      "travel_time_sec": 426.0,
-      "optimal_offset_sec": 0.0,
+      "travel_time_sec": 53.25,
+      "optimal_offset_sec": 38.0,
       "cycle_time_sec": 38,
       "drl_optimized": true,
-      "avg_speed_kmh": 5.0
+      "avg_speed_kmh": 40.0
     }
   },
   "agent4": {
     "agent1": {
       "distance_km": 0.88,
-      "travel_time_sec": 636.12,
+      "travel_time_sec": 79.51,
       "optimal_offset_sec": 38.0,
       "cycle_time_sec": 38,
       "drl_optimized": true,
-      "avg_speed_kmh": 5.0
+      "avg_speed_kmh": 40.0
     },
     "agent2": {
       "distance_km": 1.63,
-      "travel_time_sec": 1176.7,
+      "travel_time_sec": 147.09,
       "optimal_offset_sec": 38.0,
       "cycle_time_sec": 38,
       "drl_optimized": true,
-      "avg_speed_kmh": 5.0
+      "avg_speed_kmh": 40.0
     },
     "agent3": {
       "distance_km": 0.59,
-      "travel_time_sec": 426.0,
-      "optimal_offset_sec": 0.0,
+      "travel_time_sec": 53.25,
+      "optimal_offset_sec": 38.0,
       "cycle_time_sec": 38,
       "drl_optimized": true,
-      "avg_speed_kmh": 5.0
+      "avg_speed_kmh": 40.0
     }
   }
 }

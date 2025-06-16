@@ -157,7 +157,11 @@ class TestingSimulationWithServer(Simulation):
             
         # Generate route file and start simulation
         self._TrafficGen.generate_routefile(seed=episode)
-        traci.start(self._sumo_cmd)
+        if hasattr(self, '_traci_port') and self._traci_port:
+            traci.start(self._sumo_cmd, port=self._traci_port)
+        else:
+            traci.start(self._sumo_cmd)
+        traci.setOrder(1)
         print("Simulating...")
 
         # Initialize simulation variables
@@ -260,6 +264,7 @@ if __name__ == "__main__":
     parser.add_argument('--phase', type=str, help='Phase to use for model loading (e.g., "base", "sync"). If not specified, will use non-phase model.')
     parser.add_argument('-i', '--interactive', action='store_true', help='Run in interactive testing mode with UI')
     parser.add_argument('--no-route-file', action='store_true', help='Use no route file for traffic generation')
+    parser.add_argument('--traci-port', type=int, help='Port number for TraCI connection')
     args = parser.parse_args()
     
     # Read server configuration first to get agent ID
@@ -345,6 +350,7 @@ if __name__ == "__main__":
             mapping_config,
             env_file_path
         )
+        simulation._traci_port = args.traci_port
         print("----- Testing episode (interactive)")
         simulation_time = simulation.run(config['episode_seed'])
         print("Simulation time:", simulation_time, "s")
@@ -378,6 +384,7 @@ if __name__ == "__main__":
             mapping_config,
             env_file_path
         )
+        simulation._traci_port = args.traci_port
         print("----- Testing episode")
         simulation_time = simulation.run(config['episode_seed'])
         print("Simulation time:", simulation_time, "s")

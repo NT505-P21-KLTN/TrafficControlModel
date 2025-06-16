@@ -1,0 +1,21 @@
+<?xml version='1.0' encoding='utf-8'?>
+<routes>
+            <vType accel="1.0" decel="4.5" id="veh_passenger" length="5.0" minGap="2.5" maxSpeed="25" sigma="0.5" guiShape="passenger" />
+            <vType accel="0.8" decel="3.0" id="veh_bus" length="12.0" minGap="3.0" maxSpeed="20" sigma="0.5" guiShape="bus" />
+            <vType accel="0.7" decel="2.5" id="veh_truck" length="10.0" minGap="3.0" maxSpeed="18" sigma="0.5" guiShape="truck" />
+            <vType accel="1.2" decel="5.0" id="veh_emergency" length="6.0" minGap="2.0" maxSpeed="30" sigma="0.5" guiShape="emergency" />
+            <vType accel="1.5" decel="6.0" id="veh_motorcycle" length="2.0" minGap="1.5" maxSpeed="35" sigma="0.5" guiShape="motorcycle" />
+
+            <route id="W_N" edges="W2TL TL2N" />
+            <route id="W_E" edges="W2TL TL2E" />
+            <route id="W_S" edges="W2TL TL2S" />
+            <route id="N_W" edges="N2TL TL2W" />
+            <route id="N_E" edges="N2TL TL2E" />
+            <route id="N_S" edges="N2TL TL2S" />
+            <route id="E_W" edges="E2TL TL2W" />
+            <route id="E_N" edges="E2TL TL2N" />
+            <route id="E_S" edges="E2TL TL2S" />
+            <route id="S_W" edges="S2TL TL2W" />
+            <route id="S_N" edges="S2TL TL2N" />
+            <route id="S_E" edges="S2TL TL2E" />
+</routes>

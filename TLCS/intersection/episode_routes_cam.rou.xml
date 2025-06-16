@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!-- generated on 2025-06-15 15:00:40 by Eclipse SUMO netedit Version 1.19.0
+-->
+
+<routes xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="http://sumo.dlr.de/xsd/routes_file.xsd">
+    <!-- VTypes -->
+    <vType id="veh_bus" vClass="bus"/>
+    <vType id="veh_delivery" vClass="delivery"/>
+    <vType id="veh_passenger" length="5.00" minGap="2.50" maxSpeed="25.00" accel="1.0" decel="4.5" sigma="0.5"/>
+    <vType id="veh_trailer" vClass="trailer"/>
+    <vType id="veh_truck" vClass="truck"/>
+    <!-- Routes -->
+    <route id="E_N" edges="E2TL TL2N"/>
+    <route id="E_S" edges="E2TL TL2S"/>
+    <route id="E_W" edges="E2TL TL2W"/>
+    <route id="N_E" edges="N2TL TL2E"/>
+    <route id="N_S" edges="N2TL TL2S"/>
+    <route id="N_W" edges="N2TL TL2W"/>
+    <route id="S_E" edges="S2TL TL2E"/>
+    <route id="S_N" edges="S2TL TL2N"/>
+    <route id="S_W" edges="S2TL TL2W"/>
+    <route id="W_E" edges="W2TL TL2E"/>
+    <route id="W_N" edges="W2TL TL2N"/>
+    <route id="W_S" edges="W2TL TL2S"/>
+</routes>

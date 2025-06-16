@@ -1,7 +1,8 @@
 import tensorflow as tf
 from tensorflow.keras.layers import Dense, Input, BatchNormalization, Activation, Reshape, Flatten
 from tensorflow.keras.models import Model
-from tensorflow.keras.optimizers.legacy import Adam
+# from tensorflow.keras.optimizers.legacy import Adam
+from tensorflow.keras.optimizers import Adam
 import numpy as np
 
 class SyncDRLModel:

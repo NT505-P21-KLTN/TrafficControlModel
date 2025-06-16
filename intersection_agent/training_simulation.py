@@ -316,7 +316,7 @@ class Simulation:
                 state[car_position] = 1  # write the position of the car car_id in the state array in the form of "cell occupied"
 
         if self.communicator:
-            self.communicator.send_state(state.tolist(), self._step, traffic_data)
+            self.communicator.send_state(state, self._step, traffic_data)
             
         return state
 

@@ -26,7 +26,7 @@ class FirebaseService:
             
             # Initialize with direct database URL
             firebase_admin.initialize_app(cred, {
-                'databaseURL': 'https://traffic-61ac0-default-rtdb.asia-southeast1.firebasedatabase.app/'
+                'databaseURL': 'https://kltn-demo-default-rtdb.asia-southeast1.firebasedatabase.app/'
             })
             
             # Get a reference to the database
