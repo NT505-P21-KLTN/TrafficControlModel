@@ -6,6 +6,8 @@ import os
 import time
 import requests
 from agent_communicator import AgentCommunicatorTraining
+from add_vehicle import DirectVehicleSpawner
+from direct_connections_manager import DirectConnectionsManager
 
 # phase codes based on environment.net.xml
 PHASE_NS_GREEN = 0  # action 0 code 00
@@ -48,6 +50,17 @@ class Simulation:
         self._processed_transfer_ids = set()  # Track vehicles we've already processed
         self._spawn_attempts = {}  # Track spawn attempts per vehicle to prevent infinite retries
         
+        # Initialize direct vehicle spawner and connections manager
+        self.direct_spawner = DirectVehicleSpawner(agent_id)
+        self.connections_manager = DirectConnectionsManager(agent_id=agent_id)
+        
+        # Load direct connections from config
+        direct_connections = self.connections_manager.get_connections()
+        for target_agent_id, target_url in direct_connections.items():
+            self.direct_spawner.add_connection(target_agent_id, target_url)
+        
+        print(f"Initialized direct vehicle spawner for {agent_id} with {len(direct_connections)} connections")
+        
         # Road connections for vehicle transfers
         self.road_connections = {}
         if mapping_config and 'map' in mapping_config:
@@ -76,6 +89,11 @@ class Simulation:
         self.server_url = server_url
         if server_url:
             self.communicator = AgentCommunicatorTraining(server_url, agent_id, mapping_config, env_file_path)
+            
+            # Add direct connections to communicator as well
+            for target_agent_id, target_url in direct_connections.items():
+                self.communicator.add_direct_connection(target_agent_id, target_url)
+            
             self.communicator.update_status("initialized")
             self.communicator.update_config({
                 "max_steps": max_steps,
@@ -616,19 +634,39 @@ class Simulation:
                                     'timestamp': time.time()
                                 }
                                 
-                                # Send vehicle transfer data via traffic data in state update
+                                # Try direct transfer first, then fallback to server
+                                success = False
+                                
+                                # Attempt direct vehicle transfer
+                                if self.direct_spawner:
+                                    success = self.direct_spawner.spawn_vehicle_direct(destination_agent, transfer_data)
+                                    if success:
+                                        print(f"[TRAINING] Successfully sent vehicle {vehicle_id} directly to agent {destination_agent}")
+                                
+                                # If direct transfer failed, use communicator with server fallback
+                                if not success and self.communicator:
+                                    success = self.communicator.queue_vehicle_transfer(transfer_data, destination_agent)
+                                    if success:
+                                        print(f"[TRAINING] Successfully sent vehicle {vehicle_id} to agent {destination_agent} via server")
+                                
+                                # Also send state data for coordination
                                 traffic_data_with_transfer = {
-                                    'vehicle_transfer': transfer_data,
                                     'queue_length': self._get_queue_length(),
                                     'current_phase': traci.trafficlight.getPhase("TL"),
-                                    'training_mode': True
+                                    'training_mode': True,
+                                    'vehicle_transfers_sent': 1 if success else 0
                                 }
                                 
                                 # Get current state for better sync agent coordination
                                 current_state = self._get_state()
                                 
-                                self.communicator.send_state(current_state.tolist(), self._step, traffic_data_with_transfer)
-                                print(f"[TRAINING] Sent vehicle {vehicle_id} to agent {destination_agent} via {exit_direction} (with state data)")
+                                if self.communicator:
+                                    self.communicator.send_state(current_state.tolist(), self._step, traffic_data_with_transfer)
+                                
+                                if success:
+                                    print(f"[TRAINING] Vehicle {vehicle_id} transfer initiated to agent {destination_agent} via {exit_direction}")
+                                else:
+                                    print(f"[TRAINING] Failed to transfer vehicle {vehicle_id} to agent {destination_agent}")
                                 
                 except traci.exceptions.TraCIException:
                     # Vehicle is no longer in simulation, skip it

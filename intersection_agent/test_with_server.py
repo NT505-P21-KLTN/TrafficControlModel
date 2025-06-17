@@ -21,6 +21,8 @@ from model import TestModel
 from utils import import_test_configuration, set_sumo, set_test_path
 from agent_communicator import AgentCommunicatorTesting
 from interactive_simulation import InteractiveSimulation
+from add_vehicle import DirectVehicleSpawner
+from direct_connections_manager import DirectConnectionsManager
 
 if 'SUMO_HOME' in os.environ:
     tools = os.path.join(os.environ['SUMO_HOME'], 'tools')
@@ -131,6 +133,17 @@ class TestingSimulationWithServer(Simulation):
         self._server_url = server_url
         self._agent_id = agent_id  # Store agent_id again for clarity
         
+        # Initialize direct vehicle spawner and connections manager
+        self.direct_spawner = DirectVehicleSpawner(agent_id)
+        self.connections_manager = DirectConnectionsManager(agent_id=agent_id)
+        
+        # Load direct connections from config
+        direct_connections = self.connections_manager.get_connections()
+        for target_agent_id, target_url in direct_connections.items():
+            self.direct_spawner.add_connection(target_agent_id, target_url)
+        
+        print(f"Initialized direct vehicle spawner for {agent_id} with {len(direct_connections)} connections")
+        
         # Disable auto spawn if no_route_file is True
         if no_route_file:
             self.auto_spawn = False
@@ -138,6 +151,11 @@ class TestingSimulationWithServer(Simulation):
         
         if server_url:
             self._communicator = AgentCommunicatorTesting(server_url, agent_id, mapping_config, env_file_path)
+            
+            # Add direct connections to communicator as well
+            for target_agent_id, target_url in direct_connections.items():
+                self._communicator.add_direct_connection(target_agent_id, target_url)
+            
             self._communicator.update_status("test_initialized")
             self._communicator.update_config({
                 "max_steps": max_steps,
@@ -156,6 +174,13 @@ class TestingSimulationWithServer(Simulation):
         Runs the testing simulation and reports to server if enabled
         """
         start_time = timeit.default_timer()
+
+        # Set random seed for truly unique vehicle generation
+        import os
+        import time
+        timestamp_seed = int(time.time() * 1000000) + os.getpid() + episode
+        random.seed(timestamp_seed)
+        print(f"Set random seed to {timestamp_seed} for unique vehicle generation")
 
         if self._communicator:
             self._communicator.update_status("testing")
@@ -296,6 +321,10 @@ class TestingSimulationWithServer(Simulation):
                     # Skip if vehicle is already being tracked for exit
                     if vehicle_id in self._exited_vehicles:
                         continue
+                    
+                    # Skip transferred vehicles to prevent cascading transfers
+                    if vehicle_id.startswith('transferred_'):
+                        continue
                     # Get vehicle's current road and position
                     current_road = traci.vehicle.getRoadID(vehicle_id)
                     current_position = traci.vehicle.getLanePosition(vehicle_id)
@@ -345,28 +374,49 @@ class TestingSimulationWithServer(Simulation):
                                     'timestamp': time.time()
                                 }
                                 
-                                # Send vehicle info to server if connected
+                                # Try direct transfer first, then fallback to server
+                                transfer_data = {
+                                    'vehicle_id': vehicle_id,
+                                    'type': vehicle_type,
+                                    'route': route,
+                                    'speed': speed,
+                                    'lane': lane,
+                                    'position': position,
+                                    'waiting_time': waiting_time,
+                                    'exit_direction': exit_direction,
+                                    'from_agent': self._agent_id,
+                                    'to_agent': destination_agent,
+                                    'timestamp': time.time()
+                                }
+                                
+                                success = False
+                                
+                                # Attempt direct vehicle transfer first
+                                if self.direct_spawner:
+                                    success = self.direct_spawner.spawn_vehicle_direct(destination_agent, transfer_data)
+                                    if success:
+                                        print(f"[DIRECT] Successfully sent vehicle {vehicle_id} directly to agent {destination_agent}")
+                                
+                                # If direct transfer failed, use communicator with server fallback
+                                if not success and self._communicator:
+                                    success = self._communicator.queue_vehicle_transfer(transfer_data, destination_agent)
+                                    if success:
+                                        print(f"[SERVER] Successfully sent vehicle {vehicle_id} to agent {destination_agent} via server")
+                                
+                                # Also send state data for coordination
                                 if self._communicator:
-                                    transfer_data = {
-                                        'vehicle_id': vehicle_id,
-                                        'type': vehicle_type,
-                                        'route': route,
-                                        'speed': speed,
-                                        'lane': lane,
-                                        'position': position,
-                                        'waiting_time': waiting_time,
-                                        'exit_direction': exit_direction,
-                                        'from_agent': self._agent_id,
-                                        'to_agent': destination_agent,
-                                        'timestamp': time.time()
-                                    }
-                                    
-                                    # Send state update with vehicle transfer data
                                     current_state = self._get_state()
                                     self._communicator.send_state(current_state.tolist(), self._step, {
-                                        'vehicle_transfer': transfer_data
+                                        'queue_length': self._get_queue_length(),
+                                        'current_phase': traci.trafficlight.getPhase("TL"),
+                                        'testing_mode': True,
+                                        'vehicle_transfers_sent': 1 if success else 0
                                     })
-                                    print(f"Sent vehicle {vehicle_id} to agent {destination_agent} (with state data)")
+                                
+                                if success:
+                                    print(f"Vehicle {vehicle_id} transfer initiated to agent {destination_agent} via {exit_direction}")
+                                else:
+                                    print(f"Failed to transfer vehicle {vehicle_id} to agent {destination_agent}")
                             
                 except traci.exceptions.TraCIException:
                     # Vehicle is no longer in simulation, skip it
@@ -450,26 +500,58 @@ class TestingSimulationWithServer(Simulation):
                     # Determine the route edges based on the original route and entry road
                     route_edges = [vehicle_data['spawn_road']]
 
-                    # Add destination edge based on original route
+                    # Determine destination edge based on original route, avoiding invalid combinations
+                    destination_edge = None
                     if 'route' in vehicle_data:
                         route_parts = vehicle_data['route'].split('_')
                         if len(route_parts) >= 2:
-                            # Map the route parts to actual edge names
                             from_dir = route_parts[0]
                             to_dir = route_parts[1]
 
                             # Map directions to edge names
                             edge_map = {
                                 'N': 'TL2N',
-                                'S': 'TL2S',
+                                'S': 'TL2S', 
                                 'E': 'TL2E',
                                 'W': 'TL2W'
                             }
 
-                            # Add the destination edge if it exists in our map
+                            # Check for valid route combinations (avoid U-turns and impossible routes)
+                            entry_road = vehicle_data['spawn_road']
+                            valid_combinations = {
+                                'N2TL': ['TL2E', 'TL2W', 'TL2S'],  # From north: can go east, west, south
+                                'S2TL': ['TL2E', 'TL2W', 'TL2N'],  # From south: can go east, west, north
+                                'E2TL': ['TL2N', 'TL2S', 'TL2W'],  # From east: can go north, south, west
+                                'W2TL': ['TL2N', 'TL2S', 'TL2E']   # From west: can go north, south, east
+                            }
+                            
+                            # Check if the intended destination is valid
                             if to_dir in edge_map:
-                                route_edges.append(edge_map[to_dir])
-                                print(f"Created route {route_id} with edges: {route_edges}")
+                                intended_destination = edge_map[to_dir]
+                                if entry_road in valid_combinations and intended_destination in valid_combinations[entry_road]:
+                                    destination_edge = intended_destination
+                                else:
+                                    # Choose a random valid destination if original is invalid
+                                    print(f"Invalid route combination {entry_road} -> {intended_destination}, choosing random valid destination")
+                                    if entry_road in valid_combinations:
+                                        destination_edge = random.choice(valid_combinations[entry_road])
+                                    
+                    # If no valid destination found, choose a random one based on entry road
+                    if not destination_edge:
+                        entry_road = vehicle_data['spawn_road']
+                        if entry_road == 'N2TL':
+                            destination_edge = random.choice(['TL2E', 'TL2W', 'TL2S'])
+                        elif entry_road == 'S2TL':
+                            destination_edge = random.choice(['TL2E', 'TL2W', 'TL2N'])
+                        elif entry_road == 'E2TL':
+                            destination_edge = random.choice(['TL2N', 'TL2S', 'TL2W'])
+                        elif entry_road == 'W2TL':
+                            destination_edge = random.choice(['TL2N', 'TL2S', 'TL2E'])
+                        else:
+                            destination_edge = 'TL2N'  # Default fallback
+                    
+                    route_edges.append(destination_edge)
+                    print(f"Created route {route_id} with edges: {route_edges}")
 
                     # Add the route (check if it already exists first)
                     try:
@@ -494,16 +576,62 @@ class TestingSimulationWithServer(Simulation):
                             self._incoming_vehicles.insert(0, vehicle_data)
                             continue
 
-                    # Spawn the vehicle using the type from the transfer data
+                    # Generate a new unique vehicle ID to avoid conflicts
+                    import os
+                    import time
+                    timestamp_ms = int(time.time() * 1000000)  # Microseconds for higher precision
+                    process_id = os.getpid()
+                    random_suffix = random.randint(100000, 999999)
+                    new_vehicle_id = f"transferred_{vehicle_data['type']}_{self._agent_id}_{timestamp_ms}_{process_id}_{random_suffix}"
+                    
+                    # Create special vehicle type with different color for transferred vehicles
+                    base_type = vehicle_data['type']
+                    
+                    # Clean up the base type - remove existing '_transferred' suffix to avoid nesting
+                    if base_type.endswith('_transferred'):
+                        clean_base_type = base_type.replace('_transferred', '')
+                    else:
+                        clean_base_type = base_type
+                    
+                    transfer_type = f"{clean_base_type}_transferred"
+                    
+                    # Check if the transferred vehicle type already exists
+                    try:
+                        existing_types = traci.vehicletype.getIDList()
+                        if transfer_type not in existing_types:
+                            # First try to use the original clean base type
+                            source_type = clean_base_type if clean_base_type in existing_types else base_type
+                            
+                            if source_type in existing_types:
+                                # Copy all properties from source type
+                                traci.vehicletype.copy(source_type, transfer_type)
+                                # Set distinctive color for transferred vehicles (bright cyan/blue)
+                                traci.vehicletype.setColor(transfer_type, (0, 255, 255, 255))  # Cyan color
+                                print(f"Created transferred vehicle type {transfer_type} with cyan color (from {source_type})")
+                            else:
+                                # Fallback: use original type if we can't create transferred version
+                                transfer_type = base_type
+                                print(f"Warning: Could not find base type {source_type}, using original {base_type}")
+                    except Exception as e:
+                        print(f"Warning: Could not create transferred vehicle type: {e}")
+                        transfer_type = base_type  # Fallback to original type
+                    
+                    # Spawn the vehicle using the new unique ID and special type
                     traci.vehicle.add(
-                        vehID=vehicle_data['vehicle_id'],
+                        vehID=new_vehicle_id,
                         routeID=route_id,
-                        typeID=vehicle_data['type'],  # Use the type from transfer data
+                        typeID=transfer_type,  # Use the special transferred type
                         departLane=str(vehicle_data['spawn_lane']),
                         departSpeed=str(vehicle_data['speed']),
                         departPos="0"
                     )
-                    print(f"Spawned transferred vehicle {vehicle_data['vehicle_id']} of type {vehicle_data['type']} on {vehicle_data['spawn_road']} with route {route_id}")
+                    
+                    # Set vehicle color directly (additional visual distinction)
+                    try:
+                        traci.vehicle.setColor(new_vehicle_id, (0, 255, 255, 255))  # Bright cyan
+                    except Exception as e:
+                        print(f"Warning: Could not set vehicle color: {e}")
+                    print(f"Spawned transferred vehicle {new_vehicle_id} (original: {vehicle_data['vehicle_id']}) of type {vehicle_data['type']} on {vehicle_data['spawn_road']} with route {route_id}")
 
                     try:
                         delete_url = f"{self._server_url}/api/vehicle_transfer/{vehicle_data['vehicle_id']}"

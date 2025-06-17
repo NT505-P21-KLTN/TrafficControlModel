@@ -26,9 +26,11 @@ class AgentCommunicatorTraining:
         self.server_url = server_url
         self.agent_id = agent_id or socket.gethostname()
 
-        # Initialize direct connections (for direct agent-to-agent communication)
-        self.direct_connections = {}
-
+        # Initialize direct connections for agent-to-agent communication
+        self.direct_connections = {}  # Store direct connections to other agents
+        self.connected_agents = {}    # Store connected agent info and data
+        self.vehicle_transfer_queue = []  # Queue for outgoing vehicle transfers
+        
         self.data = {
             'agent_id': self.agent_id,
             'rewards': [],
@@ -490,6 +492,96 @@ class AgentCommunicatorTraining:
             print(f"Error extracting environment information: {e}")
             return None
 
+    def add_direct_connection(self, agent_id, url):
+        """Add a direct connection to another agent for vehicle transfers"""
+        self.direct_connections[agent_id] = {
+            'url': url,
+            'last_sync': 0
+        }
+        if agent_id not in self.connected_agents:
+            self.connected_agents[agent_id] = {
+                'url': url,
+                'last_sync': 0,
+                'data': None
+            }
+        print(f"Added direct connection to agent {agent_id} at {url}")
+
+    def send_vehicle_transfer_direct(self, vehicle_data, target_agent_id):
+        """Send vehicle transfer directly to target agent"""
+        if target_agent_id in self.direct_connections:
+            try:
+                connection = self.direct_connections[target_agent_id]
+                url = connection['url']
+                
+                # Send vehicle transfer directly to target agent
+                response = requests.post(
+                    f"{url}/api/vehicle_transfer",
+                    json=vehicle_data,
+                    timeout=5
+                )
+                
+                if response.status_code == 200:
+                    print(f"Successfully sent vehicle {vehicle_data['vehicle_id']} directly to agent {target_agent_id}")
+                    return True
+                else:
+                    print(f"Failed to send vehicle directly to agent {target_agent_id}: {response.status_code}")
+                    return False
+                    
+            except Exception as e:
+                print(f"Error sending vehicle transfer directly to agent {target_agent_id}: {e}")
+                return False
+        else:
+            print(f"No direct connection to agent {target_agent_id}, falling back to server")
+            return False
+
+    def queue_vehicle_transfer(self, vehicle_data, target_agent_id):
+        """Queue a vehicle transfer for direct or server-based delivery"""
+        # Try direct transfer first
+        if self.send_vehicle_transfer_direct(vehicle_data, target_agent_id):
+            return True
+        
+        # Fall back to server-based transfer
+        try:
+            response = requests.post(
+                f"{self.server_url}/api/vehicle_transfer",
+                json=vehicle_data,
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                print(f"Successfully sent vehicle {vehicle_data['vehicle_id']} to server for agent {target_agent_id}")
+                return True
+            else:
+                print(f"Failed to send vehicle to server: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            print(f"Error sending vehicle transfer to server: {e}")
+            return False
+
+    def _sync_with_connected_agents(self):
+        """Sync directly with connected agents"""
+        for agent_id, agent_data in self.connected_agents.items():
+            try:
+                # Get data from connected agent
+                if agent_id in self.direct_connections:
+                    connection = self.direct_connections[agent_id]
+                    response = requests.get(f"{connection['url']}/api/agent_data", timeout=3)
+                    if response.status_code == 200:
+                        data = response.json()
+                        agent_data['data'] = data
+                        agent_data['last_sync'] = time.time()
+            except Exception as e:
+                print(f"Error syncing with agent {agent_id}: {e}")
+
+    def get_connected_agent_data(self, agent_id):
+        """Get data from a connected agent"""
+        if agent_id in self.connected_agents:
+            agent_data = self.connected_agents[agent_id]
+            if time.time() - agent_data['last_sync'] < 10.0:  # Data is fresh if less than 10 seconds old
+                return agent_data['data']
+        return None
+
 class AgentCommunicatorTesting:
     def __init__(self, server_url, agent_id, mapping_config=None, env_file_path=None):
         """
@@ -731,6 +823,59 @@ class AgentCommunicatorTesting:
                 'last_sync': 0,
                 'data': None
             }
+
+    def send_vehicle_transfer_direct(self, vehicle_data, target_agent_id):
+        """Send vehicle transfer directly to target agent"""
+        if target_agent_id in self.direct_connections:
+            try:
+                connection = self.direct_connections[target_agent_id]
+                url = connection['url']
+                
+                # Send vehicle transfer directly to target agent
+                response = requests.post(
+                    f"{url}/api/vehicle_transfer",
+                    json=vehicle_data,
+                    timeout=5
+                )
+                
+                if response.status_code == 200:
+                    print(f"Successfully sent vehicle {vehicle_data['vehicle_id']} directly to agent {target_agent_id}")
+                    return True
+                else:
+                    print(f"Failed to send vehicle directly to agent {target_agent_id}: {response.status_code}")
+                    return False
+                    
+            except Exception as e:
+                print(f"Error sending vehicle transfer directly to agent {target_agent_id}: {e}")
+                return False
+        else:
+            print(f"No direct connection to agent {target_agent_id}, falling back to server")
+            return False
+
+    def queue_vehicle_transfer(self, vehicle_data, target_agent_id):
+        """Queue a vehicle transfer for direct or server-based delivery"""
+        # Try direct transfer first
+        if self.send_vehicle_transfer_direct(vehicle_data, target_agent_id):
+            return True
+        
+        # Fall back to server-based transfer
+        try:
+            response = requests.post(
+                f"{self.server_url}/api/vehicle_transfer",
+                json=vehicle_data,
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                print(f"Successfully sent vehicle {vehicle_data['vehicle_id']} to server for agent {target_agent_id}")
+                return True
+            else:
+                print(f"Failed to send vehicle to server: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            print(f"Error sending vehicle transfer to server: {e}")
+            return False
 
     def sync_with_server(self):
         try:

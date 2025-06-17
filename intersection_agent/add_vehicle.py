@@ -13,6 +13,8 @@ import matplotlib.pyplot as plt
 from matplotlib.backends.backend_qt5agg import FigureCanvasQTAgg as FigureCanvas
 from matplotlib.figure import Figure
 import numpy as np
+import requests
+import json
 
 # Add SUMO tools to path
 if 'SUMO_HOME' in os.environ:
@@ -281,10 +283,12 @@ class SimulationThread(QThread):
             # Random lane selection
             lane = random.choice(["random", "0", "1", "2"])
             
-            # Create unique vehicle ID using timestamp and random number
-            timestamp = int(time.time() * 1000)  # milliseconds
-            random_suffix = random.randint(1000, 9999)
-            vehicle_id = f"auto_{vehicle_type}_{route}_{timestamp}_{random_suffix}"
+            # Create truly unique vehicle ID using timestamp, process ID, and random
+            import os
+            timestamp_ms = int(time.time() * 1000000)  # Microseconds for higher precision
+            process_id = os.getpid()
+            random_suffix = random.randint(100000, 999999)
+            vehicle_id = f"auto_{vehicle_type}_{route}_{timestamp_ms}_{process_id}_{random_suffix}"
             
             traci.vehicle.add(
                 vehID=vehicle_id,
@@ -361,3 +365,128 @@ class SimulationThread(QThread):
             
         except Exception as e:
             print(f"Error updating cumulative statistics: {e}")
+
+class DirectVehicleSpawner:
+    """
+    A class to handle direct vehicle spawning between intersections without central server dependency
+    """
+    def __init__(self, agent_id, direct_connections=None):
+        self.agent_id = agent_id
+        self.direct_connections = direct_connections or {}
+        self.vehicle_transfer_queue = []
+        self.spawned_vehicles = set()  # Track vehicles spawned directly
+        
+    def add_connection(self, target_agent_id, target_url):
+        """Add a direct connection to another intersection agent"""
+        self.direct_connections[target_agent_id] = {
+            'url': target_url,
+            'last_used': 0
+        }
+        print(f"Added direct connection from {self.agent_id} to {target_agent_id} at {target_url}")
+    
+    def spawn_vehicle_direct(self, target_agent_id, vehicle_data):
+        """Spawn a vehicle directly at the target intersection"""
+        if target_agent_id not in self.direct_connections:
+            print(f"No direct connection to {target_agent_id}, cannot spawn vehicle directly")
+            return False
+        
+        try:
+            target_url = self.direct_connections[target_agent_id]['url']
+            
+            # Prepare vehicle data for direct spawning
+            spawn_data = {
+                'vehicle_id': vehicle_data['vehicle_id'],
+                'type': vehicle_data['type'],
+                'route': vehicle_data['route'],
+                'speed': vehicle_data['speed'],
+                'exit_direction': vehicle_data.get('exit_direction', 'north'),
+                'waiting_time': vehicle_data.get('waiting_time', 0),
+                'from_agent': self.agent_id,
+                'to_agent': target_agent_id,
+                'timestamp': time.time(),
+                'spawn_method': 'direct'
+            }
+            
+            # Send to target agent's direct spawn endpoint
+            response = requests.post(
+                f"{target_url}/api/spawn_vehicle_direct",
+                json=spawn_data,
+                timeout=5
+            )
+            
+            if response.status_code == 200:
+                print(f"Successfully spawned vehicle {vehicle_data['vehicle_id']} directly at {target_agent_id}")
+                self.spawned_vehicles.add(vehicle_data['vehicle_id'])
+                self.direct_connections[target_agent_id]['last_used'] = time.time()
+                return True
+            else:
+                print(f"Failed to spawn vehicle directly at {target_agent_id}: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            print(f"Error spawning vehicle directly at {target_agent_id}: {e}")
+            return False
+    
+    def batch_spawn_vehicles(self, target_agent_id, vehicle_list):
+        """Spawn multiple vehicles directly at target intersection"""
+        if target_agent_id not in self.direct_connections:
+            print(f"No direct connection to {target_agent_id}, cannot batch spawn vehicles")
+            return False
+        
+        try:
+            target_url = self.direct_connections[target_agent_id]['url']
+            
+            # Prepare batch spawn data
+            batch_data = {
+                'vehicles': vehicle_list,
+                'from_agent': self.agent_id,
+                'to_agent': target_agent_id,
+                'timestamp': time.time(),
+                'spawn_method': 'direct_batch'
+            }
+            
+            # Send batch to target agent
+            response = requests.post(
+                f"{target_url}/api/spawn_vehicles_batch",
+                json=batch_data,
+                timeout=10
+            )
+            
+            if response.status_code == 200:
+                print(f"Successfully batch spawned {len(vehicle_list)} vehicles at {target_agent_id}")
+                for vehicle_data in vehicle_list:
+                    self.spawned_vehicles.add(vehicle_data['vehicle_id'])
+                self.direct_connections[target_agent_id]['last_used'] = time.time()
+                return True
+            else:
+                print(f"Failed to batch spawn vehicles at {target_agent_id}: {response.status_code}")
+                return False
+                
+        except Exception as e:
+            print(f"Error batch spawning vehicles at {target_agent_id}: {e}")
+            return False
+    
+    def get_connection_status(self):
+        """Get status of all direct connections"""
+        status = {}
+        current_time = time.time()
+        
+        for agent_id, connection in self.direct_connections.items():
+            try:
+                # Test connection with a ping
+                response = requests.get(f"{connection['url']}/api/ping", timeout=2)
+                status[agent_id] = {
+                    'url': connection['url'],
+                    'status': 'online' if response.status_code == 200 else 'offline',
+                    'last_used': connection['last_used'],
+                    'response_time': response.elapsed.total_seconds() if response.status_code == 200 else None
+                }
+            except Exception as e:
+                status[agent_id] = {
+                    'url': connection['url'],
+                    'status': 'offline',
+                    'last_used': connection['last_used'],
+                    'error': str(e)
+                }
+        
+        return status

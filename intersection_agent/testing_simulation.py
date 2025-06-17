@@ -485,10 +485,13 @@ class Simulation:
             min_speed, max_speed = self.speed_ranges[vehicle_type]
             speed = random.uniform(min_speed, max_speed)
 
-            # Create unique vehicle ID using counter and larger random number
+            # Create truly unique vehicle ID using timestamp, process ID, and random
             self._vehicle_counter += 1
-            random_suffix = random.randint(10000, 99999)
-            vehicle_id = f"{vehicle_type}_{route}_{self._vehicle_counter}_{random_suffix}"
+            import os
+            timestamp_ms = int(time.time() * 1000000)  # Microseconds for higher precision
+            process_id = os.getpid()
+            random_suffix = random.randint(100000, 999999)
+            vehicle_id = f"{vehicle_type}_{route}_{self._agent_id}_{timestamp_ms}_{process_id}_{random_suffix}"
 
             # Add vehicle with proper type and departure time
             traci.vehicle.add(
