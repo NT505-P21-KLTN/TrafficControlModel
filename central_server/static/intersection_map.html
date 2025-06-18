@@ -25,7 +25,7 @@
             <meta name="viewport" content="width=device-width,
                 initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
             <style>
-                #map_438c29925dfbedaa1317557775a54100 {
+                #map_cc85a7a48d7b9ec45f187ad016c35e95 {
                     position: relative;
                     width: 100.0%;
                     height: 100.0%;
@@ -42,23 +42,20 @@
 <body>
     
     
-            <div class="folium-map" id="map_438c29925dfbedaa1317557775a54100" ></div>
+            <div class="folium-map" id="map_cc85a7a48d7b9ec45f187ad016c35e95" ></div>
         
 </body>
 <script>
     
     
-            var map_438c29925dfbedaa1317557775a54100 = L.map(
-                "map_438c29925dfbedaa1317557775a54100",
+            var map_cc85a7a48d7b9ec45f187ad016c35e95 = L.map(
+                "map_cc85a7a48d7b9ec45f187ad016c35e95",
                 {
                     center: [10.777807, 106.681676],
                     crs: L.CRS.EPSG3857,
-                    ...{
-  "zoom": 15,
-  "zoomControl": true,
-  "preferCanvas": false,
-}
-
+                    zoom: 15,
+                    zoomControl: true,
+                    preferCanvas: false,
                 }
             );
 
@@ -66,129 +63,56 @@
 
         
     
-            var tile_layer_d1d89b38bd4d0977990ad7a33fca79b0 = L.tileLayer(
+            var tile_layer_628c2ffff5ffc2834bee6e8875fb3cc0 = L.tileLayer(
                 "https://tile.openstreetmap.org/{z}/{x}/{y}.png",
-                {
-  "minZoom": 0,
-  "maxZoom": 19,
-  "maxNativeZoom": 19,
-  "noWrap": false,
-  "attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors",
-  "subdomains": "abc",
-  "detectRetina": false,
-  "tms": false,
-  "opacity": 1,
-}
-
+                {"attribution": "\u0026copy; \u003ca href=\"https://www.openstreetmap.org/copyright\"\u003eOpenStreetMap\u003c/a\u003e contributors", "detectRetina": false, "maxNativeZoom": 19, "maxZoom": 19, "minZoom": 0, "noWrap": false, "opacity": 1, "subdomains": "abc", "tms": false}
             );
         
     
-            tile_layer_d1d89b38bd4d0977990ad7a33fca79b0.addTo(map_438c29925dfbedaa1317557775a54100);
+            tile_layer_628c2ffff5ffc2834bee6e8875fb3cc0.addTo(map_cc85a7a48d7b9ec45f187ad016c35e95);
         
     
-            var marker_cluster_9534920331d5312156c68765cc2f755e = L.markerClusterGroup(
-                {
-}
+            var marker_cluster_3a362978c9a55ab5fbb4c2e83b3014a3 = L.markerClusterGroup(
+                {}
             );
         
     
-            var marker_819fa5672505cc9ba8ee8bdc3167abd3 = L.marker(
-                [10.799418, 106.694178],
-                {
-}
-            ).addTo(marker_cluster_9534920331d5312156c68765cc2f755e);
+            marker_cluster_3a362978c9a55ab5fbb4c2e83b3014a3.addTo(map_cc85a7a48d7b9ec45f187ad016c35e95);
         
     
-            var icon_51f75fd9887821e47c06c8b225f39c37 = L.AwesomeMarkers.icon(
-                {
-  "markerColor": "red",
-  "iconColor": "white",
-  "icon": "traffic-light",
-  "prefix": "fa",
-  "extraClasses": "fa-rotate-0",
-}
+            var marker_1ae77279d33a945985e34a9c776e89b7 = L.marker(
+                [10.777807, 106.681676],
+                {}
+            ).addTo(map_cc85a7a48d7b9ec45f187ad016c35e95);
+        
+    
+            var icon_f8d34dc4d351f23fec790c6c90430a23 = L.AwesomeMarkers.icon(
+                {"extraClasses": "fa-rotate-0", "icon": "info-sign", "iconColor": "white", "markerColor": "blue", "prefix": "glyphicon"}
             );
+            marker_1ae77279d33a945985e34a9c776e89b7.setIcon(icon_f8d34dc4d351f23fec790c6c90430a23);
         
     
-        var popup_27510f53588c092c7f68a6bd557aeac5 = L.popup({
-  "maxWidth": 250,
-});
+        var popup_1bae2676972f8f47dcdbe30c3b28109b = L.popup({"maxWidth": "100%"});
 
         
             
-                var html_edc7ea61e663ea98d3ed9d4e1162f57d = $(`<div id="html_edc7ea61e663ea98d3ed9d4e1162f57d" style="width: 100.0%; height: 100.0%;">                     <div style="width: 200px;">                         <h3>Dien Bien Phu - Dinh Tien Hoang</h3>                         <b>Agent ID:</b> agent2<br>                         <b>Status:</b> Offline<br>                         <b>Location:</b> 10.799418, 106.694178                     </div>                     </div>`)[0];
-                popup_27510f53588c092c7f68a6bd557aeac5.setContent(html_edc7ea61e663ea98d3ed9d4e1162f57d);
+                var html_7c8db48f33020a4aef17e67e96f6da71 = $(`<div id="html_7c8db48f33020a4aef17e67e96f6da71" style="width: 100.0%; height: 100.0%;">Default Location (No Agent Data)</div>`)[0];
+                popup_1bae2676972f8f47dcdbe30c3b28109b.setContent(html_7c8db48f33020a4aef17e67e96f6da71);
             
         
 
-        marker_819fa5672505cc9ba8ee8bdc3167abd3.bindPopup(popup_27510f53588c092c7f68a6bd557aeac5)
+        marker_1ae77279d33a945985e34a9c776e89b7.bindPopup(popup_1bae2676972f8f47dcdbe30c3b28109b)
         ;
 
         
     
     
-            marker_819fa5672505cc9ba8ee8bdc3167abd3.bindTooltip(
+            marker_1ae77279d33a945985e34a9c776e89b7.bindTooltip(
                 `<div>
-                     Dien Bien Phu - Dinh Tien Hoang
+                     Default Location
                  </div>`,
-                {
-  "sticky": true,
-}
+                {"sticky": true}
             );
-        
-    
-                marker_819fa5672505cc9ba8ee8bdc3167abd3.setIcon(icon_51f75fd9887821e47c06c8b225f39c37);
-            
-    
-            var marker_2165ed411e8ad51f8dadeff8c740e3e6 = L.marker(
-                [10.786519, 106.69368],
-                {
-}
-            ).addTo(marker_cluster_9534920331d5312156c68765cc2f755e);
-        
-    
-            var icon_8c6b8f3b460777dfa68b6c288272e914 = L.AwesomeMarkers.icon(
-                {
-  "markerColor": "red",
-  "iconColor": "white",
-  "icon": "traffic-light",
-  "prefix": "fa",
-  "extraClasses": "fa-rotate-0",
-}
-            );
-        
-    
-        var popup_731822d6454dca971905fcc8f41ee4dc = L.popup({
-  "maxWidth": 250,
-});
-
-        
-            
-                var html_d03e571d413505cfdb7326ef4d7a5090 = $(`<div id="html_d03e571d413505cfdb7326ef4d7a5090" style="width: 100.0%; height: 100.0%;">                     <div style="width: 200px;">                         <h3>Dien Bien Phu - Hai Ba Trung</h3>                         <b>Agent ID:</b> agent1<br>                         <b>Status:</b> Offline<br>                         <b>Location:</b> 10.786519, 106.693680                     </div>                     </div>`)[0];
-                popup_731822d6454dca971905fcc8f41ee4dc.setContent(html_d03e571d413505cfdb7326ef4d7a5090);
-            
-        
-
-        marker_2165ed411e8ad51f8dadeff8c740e3e6.bindPopup(popup_731822d6454dca971905fcc8f41ee4dc)
-        ;
-
-        
-    
-    
-            marker_2165ed411e8ad51f8dadeff8c740e3e6.bindTooltip(
-                `<div>
-                     Dien Bien Phu - Hai Ba Trung
-                 </div>`,
-                {
-  "sticky": true,
-}
-            );
-        
-    
-                marker_2165ed411e8ad51f8dadeff8c740e3e6.setIcon(icon_8c6b8f3b460777dfa68b6c288272e914);
-            
-    
-            marker_cluster_9534920331d5312156c68765cc2f755e.addTo(map_438c29925dfbedaa1317557775a54100);
         
 </script>
 </html>
