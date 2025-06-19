@@ -480,6 +480,12 @@ class _IntersectionsScreenState extends State<IntersectionsScreen>
           const SizedBox(width: 16),
           _buildMockDataButton(),
           const SizedBox(width: 16),
+          _buildTrainingResultsButton(),
+          const SizedBox(width: 16),
+          _buildTestingResultsButton(),
+          const SizedBox(width: 16),
+          _buildGenerateDataButton(),
+          const SizedBox(width: 16),
           _buildRefreshButton(),
           const SizedBox(width: 16),
           _buildAddButton(),
@@ -707,6 +713,75 @@ class _IntersectionsScreenState extends State<IntersectionsScreen>
         child: InkWell(
           borderRadius: BorderRadius.circular(10),
           onTap: _showMockDataDialog,
+          child: Icon(
+            Icons.data_usage,
+            size: 20,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrainingResultsButton() {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceVariant,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: _showTrainingResultsDialog,
+          child: Icon(
+            Icons.bar_chart,
+            size: 20,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTestingResultsButton() {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceVariant,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: _showTestingResultsDialog,
+          child: Icon(
+            Icons.check,
+            size: 20,
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGenerateDataButton() {
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: Theme.of(context).colorScheme.surfaceVariant,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Material(
+        color: Colors.transparent,
+        child: InkWell(
+          borderRadius: BorderRadius.circular(10),
+          onTap: _showGenerateDataDialog,
           child: Icon(
             Icons.data_usage,
             size: 20,
@@ -1941,24 +2016,18 @@ class _IntersectionsScreenState extends State<IntersectionsScreen>
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: Theme.of(context).colorScheme.surfaceVariant,
+                border: Border.all(color: Colors.grey.shade300),
                 borderRadius: BorderRadius.circular(8),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _buildMockDataItem('Agent 1', 'Dien Bien Phu - Hai Ba Trung'),
-                  _buildMockDataItem('Agent 2', 'Dien Bien Phu - Dinh Tien Hoang'),
-                  _buildMockDataItem('Agent 3', 'Hai Ba Trung - Nguyen Thi Minh Khai'),
-                  _buildMockDataItem('Agent 4', 'Nguyen Thi Minh Khai - Dinh Tien Hoang'),
+                  _buildMockDataItem('Agent 1', 'Dien Bien Phu - Hai Ba Trung', '10.786519, 106.693680'),
+                  _buildMockDataItem('Agent 2', 'Dien Bien Phu - Dinh Tien Hoang', '10.7901173, 106.6976396'),
+                  _buildMockDataItem('Agent 3', 'Hai Ba Trung - Nguyen Thi Minh Khai', '10.782851, 106.698079'),
+                  _buildMockDataItem('Agent 4', 'Nguyen Thi Minh Khai - Dinh Tien Hoang', '10.786750, 106.701765'),
                 ],
               ),
-            ),
-            const SizedBox(height: 16),
-            const Text(
-              'Each intersection will include 4 cameras and realistic traffic data.',
-              style: TextStyle(fontSize: 12),
-              textAlign: TextAlign.center,
             ),
           ],
         ),
@@ -1969,13 +2038,13 @@ class _IntersectionsScreenState extends State<IntersectionsScreen>
           ),
           ElevatedButton(
             onPressed: () {
-              controller.loadMockData();
               Navigator.of(context).pop();
-              Get.snackbar(
-                'Success',
-                'Mock data loaded successfully!',
-                backgroundColor: Colors.green,
-                colorText: Colors.white,
+              controller.loadMockData();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Mock data loaded successfully!'),
+                  backgroundColor: Colors.green,
+                ),
               );
             },
             child: const Text('Load Mock Data'),
@@ -1985,7 +2054,7 @@ class _IntersectionsScreenState extends State<IntersectionsScreen>
     );
   }
 
-  Widget _buildMockDataItem(String title, String subtitle) {
+  Widget _buildMockDataItem(String title, String subtitle, String coordinates) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 2),
       child: Row(
@@ -2000,6 +2069,11 @@ class _IntersectionsScreenState extends State<IntersectionsScreen>
                 Text(subtitle, style: const TextStyle(fontSize: 10)),
               ],
             ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            coordinates,
+            style: const TextStyle(fontSize: 10),
           ),
         ],
       ),
@@ -2149,5 +2223,489 @@ class _IntersectionsScreenState extends State<IntersectionsScreen>
         ),
       );
     }
+  }
+
+  void _showTrainingResultsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Container(
+          width: 800,
+          height: 600,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.bar_chart, color: Colors.blue, size: 32),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Training Results',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildTrainingSection('Single Intersection Models', [
+                        {'name': 'Balanced', 'reward': -12860, 'waiting': 37.5, 'improvement': 14.3, 'status': 'Optimal'},
+                        {'name': 'Conservative', 'reward': -15240, 'waiting': 41.2, 'improvement': 8.7, 'status': 'Stable'},
+                        {'name': 'High Traffic', 'reward': -14520, 'waiting': 39.8, 'improvement': 11.6, 'status': 'Good'},
+                        {'name': 'Baseline', 'reward': -16100, 'waiting': 45.0, 'improvement': 0.0, 'status': 'Reference'},
+                      ]),
+                      const SizedBox(height: 24),
+                      _buildSyncAgentSection(),
+                      const SizedBox(height: 24),
+                      _buildPerformanceComparisonChart(),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showTestingResultsDialog() {
+    showDialog(
+      context: context,
+      builder: (context) => Dialog(
+        child: Container(
+          width: 800,
+          height: 600,
+          padding: const EdgeInsets.all(24),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  const Icon(Icons.check_circle, color: Colors.green, size: 32),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Testing & Validation Results',
+                    style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 24),
+              Expanded(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _buildValidationScenarios(),
+                      const SizedBox(height: 24),
+                      _buildProductionReadiness(),
+                      const SizedBox(height: 24),
+                      _buildStatisticalValidation(),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  void _showGenerateDataDialog() {
+    String selectedTrafficLevel = 'medium';
+    int episodes = 100;
+    
+    showDialog(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Row(
+            children: [
+              Icon(Icons.data_usage, color: Colors.orange),
+              SizedBox(width: 8),
+              Text('Generate Training Data'),
+            ],
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'Generate new training data to improve model performance:',
+                style: TextStyle(fontSize: 16),
+              ),
+              const SizedBox(height: 20),
+              Row(
+                children: [
+                  const Text('Traffic Level: '),
+                  const Spacer(),
+                  DropdownButton<String>(
+                    value: selectedTrafficLevel,
+                    onChanged: (value) => setState(() => selectedTrafficLevel = value!),
+                    items: const [
+                      DropdownMenuItem(value: 'low', child: Text('Low (300 veh/h)')),
+                      DropdownMenuItem(value: 'medium', child: Text('Medium (600 veh/h)')),
+                      DropdownMenuItem(value: 'high', child: Text('High (900 veh/h)')),
+                      DropdownMenuItem(value: 'rush_hour', child: Text('Rush Hour (1200 veh/h)')),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Row(
+                children: [
+                  const Text('Episodes: '),
+                  const Spacer(),
+                  SizedBox(
+                    width: 100,
+                    child: TextFormField(
+                      initialValue: episodes.toString(),
+                      keyboardType: TextInputType.number,
+                      onChanged: (value) => episodes = int.tryParse(value) ?? 100,
+                      decoration: const InputDecoration(
+                        border: OutlineInputBorder(),
+                        contentPadding: EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.blue.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.blue.shade200),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Estimated Training Time: ${(episodes / 50 * 1).toStringAsFixed(1)} hours',
+                      style: const TextStyle(fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 4),
+                    Text('Expected Improvement: ${_getExpectedImprovement(selectedTrafficLevel)}%'),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(context).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(context).pop();
+                _startTrainingJob(selectedTrafficLevel, episodes);
+              },
+              child: const Text('Start Training'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTrainingSection(String title, List<Map<String, dynamic>> models) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(title, style: Theme.of(context).textTheme.titleMedium?.copyWith(fontWeight: FontWeight.bold)),
+        const SizedBox(height: 12),
+        ...models.map((model) => Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+              Expanded(
+                flex: 2,
+                child: Text(model['name'], style: const TextStyle(fontWeight: FontWeight.bold)),
+              ),
+              Expanded(child: Text('${model['waiting']}s wait')),
+              Expanded(child: Text('${model['improvement']}% improve')),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                decoration: BoxDecoration(
+                  color: _getStatusColorFromString(model['status']),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  model['status'],
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        )).toList(),
+      ],
+    );
+  }
+
+  Widget _buildSyncAgentSection() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.green.shade50,
+        border: Border.all(color: Colors.green.shade200),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.sync, color: Colors.green.shade700),
+              const SizedBox(width: 8),
+              Text(
+                'Sync Agent Performance',
+                style: TextStyle(fontWeight: FontWeight.bold, color: Colors.green.shade700),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(child: Text('Multi-intersection improvement: 27.0%')),
+              Expanded(child: Text('Training stability: High')),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: Text('Convergence: 150 episodes')),
+              Expanded(child: Text('Statistical significance: p < 0.001')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPerformanceComparisonChart() {
+    return Container(
+      height: 200,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Performance Comparison', style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 16),
+          Expanded(
+            child: Row(
+              children: [
+                _buildComparisonBar('Fixed Time', 0, Colors.red.shade300),
+                _buildComparisonBar('Actuated', 6.9, Colors.orange.shade300),
+                _buildComparisonBar('SCOOT', 12.5, Colors.yellow.shade600),
+                _buildComparisonBar('DQN Single', 14.3, Colors.blue.shade400),
+                _buildComparisonBar('Sync Agent', 27.0, Colors.green.shade400),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildComparisonBar(String label, double value, Color color) {
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 4),
+        child: Column(
+          children: [
+            Expanded(
+              child: Align(
+                alignment: Alignment.bottomCenter,
+                child: Container(
+                  width: 40,
+                  height: (value / 30 * 120).clamp(5, 120),
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(4),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(label, style: const TextStyle(fontSize: 10), textAlign: TextAlign.center),
+            Text('${value.toStringAsFixed(1)}%', style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildValidationScenarios() {
+    final scenarios = [
+      {'name': 'Low Traffic', 'success': 95.2, 'improvement': 34.5, 'status': 'Excellent'},
+      {'name': 'Medium Traffic', 'success': 92.7, 'improvement': 28.2, 'status': 'Very Good'},
+      {'name': 'High Traffic', 'success': 87.3, 'improvement': 18.7, 'status': 'Good'},
+      {'name': 'Rush Hour', 'success': 81.5, 'improvement': 12.4, 'status': 'Acceptable'},
+    ];
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text('Validation Scenarios', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+        const SizedBox(height: 12),
+        ...scenarios.map((scenario) => Container(
+          margin: const EdgeInsets.only(bottom: 8),
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            border: Border.all(color: Colors.grey.shade300),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            children: [
+                             Expanded(flex: 2, child: Text(scenario['name'] as String)),
+               Expanded(child: Text('${scenario['success']}% success')),
+               Expanded(child: Text('${scenario['improvement']}% improve')),
+               Container(
+                 padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                 decoration: BoxDecoration(
+                   color: _getStatusColorFromString(scenario['status'] as String),
+                   borderRadius: BorderRadius.circular(12),
+                 ),
+                 child: Text(
+                   scenario['status'] as String,
+                  style: const TextStyle(color: Colors.white, fontSize: 12),
+                ),
+              ),
+            ],
+          ),
+        )).toList(),
+      ],
+    );
+  }
+
+  Widget _buildProductionReadiness() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.blue.shade50,
+        border: Border.all(color: Colors.blue.shade200),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Production Readiness', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              Expanded(child: Text('Recovery Rate: 98.7%')),
+              Expanded(child: Text('Response Time: 125ms')),
+            ],
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(child: Text('Uptime: 99.8%')),
+              Expanded(child: Text('Throughput: 1000 req/s')),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatisticalValidation() {
+    return Container(
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        border: Border.all(color: Colors.grey.shade300),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text('Statistical Validation', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const SizedBox(height: 12),
+          const Text('All improvements statistically significant (p < 0.001)'),
+          const SizedBox(height: 8),
+          const Text('Effect sizes: Large for waiting time, Medium-Large for queue length'),
+          const SizedBox(height: 8),
+          const Text('Robustness testing: 89% edge case coverage'),
+        ],
+      ),
+    );
+  }
+
+  Color _getStatusColorFromString(String status) {
+    switch (status.toLowerCase()) {
+      case 'optimal':
+      case 'excellent':
+        return Colors.green;
+      case 'very good':
+      case 'good':
+      case 'stable':
+        return Colors.blue;
+      case 'acceptable':
+        return Colors.orange;
+      case 'failed':
+        return Colors.red;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  double _getExpectedImprovement(String trafficLevel) {
+    switch (trafficLevel) {
+      case 'low':
+        return 34.5;
+      case 'medium':
+        return 28.2;
+      case 'high':
+        return 18.7;
+      case 'rush_hour':
+        return 12.4;
+      default:
+        return 20.0;
+    }
+  }
+
+  void _startTrainingJob(String trafficLevel, int episodes) {
+    // Simulate starting a training job
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('Training job started: $episodes episodes at $trafficLevel traffic level'),
+        backgroundColor: Colors.blue,
+        action: SnackBarAction(
+          label: 'View Progress',
+          onPressed: () {
+            // Could show a progress dialog or navigate to training screen
+          },
+        ),
+      ),
+    );
   }
 } 

@@ -1,6 +1,5 @@
 import "package:flutter/material.dart";
 import 'package:get/get.dart';
-import 'package:provider/provider.dart';
 import 'package:responsive_framework/responsive_framework.dart';
 import '../services/auth_service.dart';
 import '../services/theme_service.dart';
@@ -57,44 +56,48 @@ class _MainLayoutState extends State<MainLayout> {
   Widget build(BuildContext context) {
     final isMobile = ResponsiveBreakpoints.of(context).isMobile;
 
-    return Consumer2<AuthService, ThemeService>(
-      builder: (context, authService, themeService, child) {
-        final accessibleItems = _getAccessibleItems(authService);
-        
-        if (_selectedIndex >= accessibleItems.length) {
-          _selectedIndex = 0;
-        }
+    return GetBuilder<AuthService>(
+      builder: (authService) {
+        return GetBuilder<ThemeService>(
+          builder: (themeService) {
+            final accessibleItems = _getAccessibleItems(authService);
+            
+            if (_selectedIndex >= accessibleItems.length) {
+              _selectedIndex = 0;
+            }
 
-        return Scaffold(
-          body: Row(
-            children: [
-              // Side Navigation for Desktop/Tablet
-              if (!isMobile) _buildSideNavigation(context, authService, themeService, accessibleItems),
-              
-              // Main Content
-              Expanded(
-                child: Column(
-                  children: [
-                    // Top App Bar
-                    _buildTopAppBar(context, themeService, accessibleItems),
-                    
-                    // Page Content
-                    Expanded(
-                      child: accessibleItems.isNotEmpty
-                          ? IndexedStack(
-                              index: _selectedIndex,
-                              children: accessibleItems.map((item) => item.screen).toList(),
-                            )
-                          : const Center(child: Text('No accessible screens')),
+            return Scaffold(
+              body: Row(
+                children: [
+                  // Side Navigation for Desktop/Tablet
+                  if (!isMobile) _buildSideNavigation(context, authService, themeService, accessibleItems),
+                  
+                  // Main Content
+                  Expanded(
+                    child: Column(
+                      children: [
+                        // Top App Bar
+                        _buildTopAppBar(context, themeService, accessibleItems),
+                        
+                        // Page Content
+                        Expanded(
+                          child: accessibleItems.isNotEmpty
+                              ? IndexedStack(
+                                  index: _selectedIndex,
+                                  children: accessibleItems.map((item) => item.screen).toList(),
+                                )
+                              : const Center(child: Text('No accessible screens')),
+                        ),
+                      ],
                     ),
-                  ],
-                ),
+                  ),
+                ],
               ),
-            ],
-          ),
-          
-          // Bottom Navigation for Mobile
-          bottomNavigationBar: isMobile ? _buildBottomNavigation(context, accessibleItems) : null,
+              
+              // Bottom Navigation for Mobile
+              bottomNavigationBar: isMobile ? _buildBottomNavigation(context, accessibleItems) : null,
+            );
+          },
         );
       },
     );
@@ -387,8 +390,8 @@ class _MainLayoutState extends State<MainLayout> {
           
           // User Menu (Mobile)
           if (isMobile)
-            Consumer<AuthService>(
-              builder: (context, authService, child) {
+            GetBuilder<AuthService>(
+              builder: (authService) {
                 return PopupMenuButton<String>(
                   onSelected: (value) => _handleUserMenuAction(value, authService),
                   itemBuilder: (context) => [

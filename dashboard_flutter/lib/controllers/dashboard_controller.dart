@@ -22,6 +22,7 @@ class DashboardController extends GetxController {
   @override
   void onInit() {
     super.onInit();
+    _initializeWithMockData(); // Initialize with mock data first
     _initializeDashboard();
     _startPeriodicUpdates();
     
@@ -30,15 +31,7 @@ class DashboardController extends GetxController {
       if (isLoading.value) {
         isLoading.value = false;
         // Set some default data if loading fails
-        dashboardData.value = {
-          'summary': {
-            'activeIntersections': 0,
-            'avgWaitTime': 0,
-            'totalVehicles': 0,
-            'efficiency': 0.0,
-          },
-          'charts': {},
-        };
+        _setDefaultDashboardData();
       }
     });
   }
@@ -273,5 +266,75 @@ class DashboardController extends GetxController {
         );
         break;
     }
+  }
+
+  void _initializeWithMockData() {
+    // Set initial mock data so dashboard displays immediately
+    dashboardData.value = {
+      'summary': {
+        'activeIntersections': 4,
+        'avgWaitTime': 42,
+        'totalVehicles': 1247,
+        'efficiency': 0.85,
+        'onlineIntersections': 4,
+        'offlineIntersections': 0,
+        'averageQueueLength': 3.2,
+        'systemEfficiency': 0.85,
+      },
+      'charts': {
+        'trafficFlow': [65, 70, 68, 72, 75, 73, 78, 80, 77],
+        'efficiency': [82, 85, 84, 86, 88, 87, 89, 85, 88],
+        'waitTimes': [45, 42, 48, 40, 38, 41, 39, 43, 42],
+      },
+      'recentAlerts': [
+        {
+          'id': 'alert_1',
+          'title': 'System Optimal',
+          'message': 'All intersections operating efficiently',
+          'severity': 'info',
+          'timestamp': DateTime.now(),
+        },
+        {
+          'id': 'alert_2', 
+          'title': 'Traffic Peak Hour',
+          'message': 'Increased traffic detected at Agent1',
+          'severity': 'warning',
+          'timestamp': DateTime.now().subtract(const Duration(minutes: 15)),
+        },
+      ],
+      'performanceTrends': {
+        'waitTimes': [45.0, 42.0, 48.0, 40.0, 38.0],
+        'queueLengths': [3.5, 3.2, 3.8, 2.9, 3.1],
+        'efficiencies': [0.82, 0.85, 0.84, 0.86, 0.85],
+      },
+      'lastUpdate': DateTime.now(),
+    };
+  }
+
+  void _setDefaultDashboardData() {
+    dashboardData.value = {
+      'summary': {
+        'activeIntersections': 0,
+        'avgWaitTime': 0,
+        'totalVehicles': 0,
+        'efficiency': 0.0,
+        'onlineIntersections': 0,
+        'offlineIntersections': 0,
+        'averageQueueLength': 0.0,
+        'systemEfficiency': 0.0,
+      },
+      'charts': {
+        'trafficFlow': [],
+        'efficiency': [],
+        'waitTimes': [],
+      },
+      'recentAlerts': [],
+      'performanceTrends': {
+        'waitTimes': [],
+        'queueLengths': [],
+        'efficiencies': [],
+      },
+      'lastUpdate': DateTime.now(),
+    };
   }
 } 

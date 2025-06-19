@@ -222,7 +222,7 @@ class IntersectionController extends GetxController {
         {
           'id': 'agent2', 
           'name': 'Dien Bien Phu - Dinh Tien Hoang',
-          'location': {'lat': 10.799418, 'lng': 106.694178},
+          'location': {'lat': 10.7901173, 'lng': 106.6976396},
           'status': 'online',
         },
         {

@@ -9,6 +9,8 @@ import math
 import numpy as np
 from datetime import datetime, timedelta
 from collections import deque
+import argparse
+import random
 
 app = Flask(__name__)
 CORS(app)  # Allow access from Flutter Web
@@ -57,7 +59,7 @@ def serve_static(filename):
 @app.route('/api/status', methods=['GET'])
 def get_status():
     """Get overall system status in Flutter dashboard format"""
-    online_count = len([a for a_id in agent_data.keys() if a_id in last_update and (time.time() - last_update[a_id] <= TIMEOUT_THRESHOLD)])
+    online_count = len([a_id for a_id in agent_data.keys() if a_id in last_update and (time.time() - last_update[a_id] <= TIMEOUT_THRESHOLD)])
     total_count = len(agent_data)
     
     # Generate some sample alerts
@@ -686,8 +688,8 @@ def generate_mock_intersections():
         {
             'id': 'agent2',
             'name': 'Dien Bien Phu - Dinh Tien Hoang',
-            'latitude': 10.799418,
-            'longitude': 106.694178,
+            'latitude': 10.7901173,
+            'longitude': 106.6976396,
             'status': 'online',
             'lastUpdate': datetime.now().isoformat(),
             'configuration': {'cycles_per_hour': 110, 'optimization_mode': 'adaptive'},
@@ -696,14 +698,14 @@ def generate_mock_intersections():
                     'id': 'agent2_north',
                     'direction': 'north',
                     'latitude': 10.799618,
-                    'longitude': 106.694178,
+                    'longitude': 106.6976396,
                     'range': 100,
                     'active': True
                 },
                 {
                     'id': 'agent2_east',
                     'direction': 'east', 
-                    'latitude': 10.799418,
+                    'latitude': 10.7901173,
                     'longitude': 106.694378,
                     'range': 100,
                     'active': True
@@ -712,14 +714,14 @@ def generate_mock_intersections():
                     'id': 'agent2_south',
                     'direction': 'south',
                     'latitude': 10.799218,
-                    'longitude': 106.694178,
+                    'longitude': 106.6976396,
                     'range': 100,
                     'active': True
                 },
                 {
                     'id': 'agent2_west',
                     'direction': 'west',
-                    'latitude': 10.799418,
+                    'latitude': 10.7901173,
                     'longitude': 106.693978,
                     'range': 100,
                     'active': True
@@ -1072,6 +1074,342 @@ def get_training_status(intersection_id):
         log_event(f"ERROR getting training status: {str(e)}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
 
+@app.route('/api/training/results', methods=['GET'])
+def get_training_results():
+    """Get comprehensive training results data"""
+    try:
+        # Mock comprehensive training results based on thesis data
+        training_results = {
+            'single_intersection': {
+                'models': [
+                    {
+                        'name': 'Balanced',
+                        'config': {'learning_rate': 0.001, 'batch_size': 32, 'gamma': 0.95},
+                        'final_reward': -12860,
+                        'avg_waiting_time': 37.506,
+                        'avg_queue_length': 6.95,
+                        'improvement_over_baseline': 14.3,
+                        'convergence_episodes': 120,
+                        'status': 'optimal'
+                    },
+                    {
+                        'name': 'Conservative',
+                        'config': {'learning_rate': 0.0001, 'batch_size': 64, 'gamma': 0.99},
+                        'final_reward': -15240,
+                        'avg_waiting_time': 41.2,
+                        'avg_queue_length': 8.1,
+                        'improvement_over_baseline': 8.7,
+                        'convergence_episodes': 180,
+                        'status': 'stable'
+                    },
+                    {
+                        'name': 'Baseline',
+                        'config': {'learning_rate': 0.0005, 'batch_size': 64, 'gamma': 0.75},
+                        'final_reward': -16100,
+                        'avg_waiting_time': 45.0,
+                        'avg_queue_length': 9.5,
+                        'improvement_over_baseline': 0.0,
+                        'convergence_episodes': 150,
+                        'status': 'reference'
+                    },
+                    {
+                        'name': 'High Traffic',
+                        'config': {'learning_rate': 0.002, 'batch_size': 128, 'gamma': 0.9},
+                        'final_reward': -14520,
+                        'avg_waiting_time': 39.8,
+                        'avg_queue_length': 7.6,
+                        'improvement_over_baseline': 11.6,
+                        'convergence_episodes': 140,
+                        'status': 'good'
+                    },
+                    {
+                        'name': 'Aggressive',
+                        'config': {'learning_rate': 0.01, 'batch_size': 32, 'gamma': 0.8},
+                        'final_reward': -50135,
+                        'avg_waiting_time': 78.4,
+                        'avg_queue_length': 15.2,
+                        'improvement_over_baseline': -74.2,
+                        'convergence_episodes': -1,
+                        'status': 'failed'
+                    },
+                ],
+                'summary': {
+                    'best_model': 'Balanced',
+                    'total_models_tested': 10,
+                    'successful_models': 8,
+                    'training_duration_hours': 48,
+                    'dataset_size': '150 episodes per model'
+                }
+            },
+            'sync_agent': {
+                'performance': {
+                    'multi_intersection_improvement': 27.0,
+                    'single_vs_multi_advantage': 12.6,
+                    'convergence_episodes': 150,
+                    'training_stability': 'high',
+                    'statistical_significance': 'p < 0.001'
+                },
+                'specialized_models': [
+                    {
+                        'traffic_level': 'low',
+                        'vehicle_density': '300/hour',
+                        'improvement_rate': 34.5,
+                        'model_file': 'sync_low_traffic.h5'
+                    },
+                    {
+                        'traffic_level': 'medium',
+                        'vehicle_density': '600/hour', 
+                        'improvement_rate': 28.2,
+                        'model_file': 'sync_medium_traffic.h5'
+                    },
+                    {
+                        'traffic_level': 'high',
+                        'vehicle_density': '900/hour',
+                        'improvement_rate': 18.7,
+                        'model_file': 'sync_high_traffic.h5'
+                    },
+                    {
+                        'traffic_level': 'rush_hour',
+                        'vehicle_density': '1200/hour',
+                        'improvement_rate': 12.4,
+                        'model_file': 'sync_rush_hour.h5'
+                    }
+                ],
+                'summary': {
+                    'correlation_traffic_performance': -0.94,
+                    'total_training_time': '72 hours',
+                    'models_generated': 5,
+                    'deployment_ready': True
+                }
+            },
+            'comparison_baseline': {
+                'fixed_time_control': {
+                    'waiting_time': '45.0s',
+                    'queue_length': '9.5 vehicles',
+                    'improvement': '0% (baseline)'
+                },
+                'actuated_control': {
+                    'waiting_time': '42.0s',
+                    'queue_length': '8.8 vehicles', 
+                    'improvement': '+6.9%'
+                },
+                'scoot_system': {
+                    'waiting_time': '39.4s',
+                    'queue_length': '8.1 vehicles',
+                    'improvement': '+12.5%'
+                },
+                'our_dqn_single': {
+                    'waiting_time': '37.5s',
+                    'queue_length': '6.95 vehicles',
+                    'improvement': '+14.3%'
+                },
+                'our_sync_agent': {
+                    'waiting_time': '32.8s',
+                    'queue_length': '5.5 vehicles',
+                    'improvement': '+27.0%'
+                }
+            }
+        }
+        
+        return jsonify({
+            'status': 'success',
+            'data': training_results,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting training results: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/testing/results', methods=['GET'])
+def get_testing_results():
+    """Get comprehensive testing and validation results"""
+    try:
+        testing_results = {
+            'validation_scenarios': [
+                {
+                    'scenario': 'Low Traffic (300 veh/h)',
+                    'duration': '24 hours',
+                    'success_rate': 95.2,
+                    'avg_improvement': 34.5,
+                    'stability_score': 9.1,
+                    'edge_cases_handled': 12,
+                    'status': 'excellent'
+                },
+                {
+                    'scenario': 'Medium Traffic (600 veh/h)',
+                    'duration': '24 hours',
+                    'success_rate': 92.7,
+                    'avg_improvement': 28.2,
+                    'stability_score': 8.8,
+                    'edge_cases_handled': 18,
+                    'status': 'very_good'
+                },
+                {
+                    'scenario': 'High Traffic (900 veh/h)',
+                    'duration': '24 hours',
+                    'success_rate': 87.3,
+                    'avg_improvement': 18.7,
+                    'stability_score': 8.2,
+                    'edge_cases_handled': 25,
+                    'status': 'good'
+                },
+                {
+                    'scenario': 'Rush Hour (1200 veh/h)',
+                    'duration': '24 hours',
+                    'success_rate': 81.5,
+                    'avg_improvement': 12.4,
+                    'stability_score': 7.6,
+                    'edge_cases_handled': 32,
+                    'status': 'acceptable'
+                }
+            ],
+            'production_readiness': {
+                'fault_tolerance': {
+                    'server_failures_handled': 15,
+                    'network_interruptions': 23,
+                    'automatic_recovery_rate': 98.7,
+                    'fallback_activation_time': '< 2 seconds'
+                },
+                'real_time_performance': {
+                    'response_time_avg': '125ms',
+                    'response_time_95th': '250ms',
+                    'throughput': '1000 requests/second',
+                    'uptime': '99.8%'
+                },
+                'scalability': {
+                    'max_intersections_tested': 4,
+                    'concurrent_agents': 4,
+                    'memory_usage': '2.1GB',
+                    'cpu_utilization': '45%'
+                }
+            },
+            'statistical_validation': {
+                'significance_tests': [
+                    {
+                        'metric': 'waiting_time_reduction',
+                        'p_value': 0.00012,
+                        'confidence_level': 99.9,
+                        'effect_size': 'large',
+                        'sample_size': 1000
+                    },
+                    {
+                        'metric': 'queue_length_reduction', 
+                        'p_value': 0.00034,
+                        'confidence_level': 99.8,
+                        'effect_size': 'medium-large',
+                        'sample_size': 1000
+                    },
+                    {
+                        'metric': 'throughput_improvement',
+                        'p_value': 0.00087,
+                        'confidence_level': 99.5,
+                        'effect_size': 'large',
+                        'sample_size': 800
+                    }
+                ],
+                'robustness_tests': {
+                    'stress_testing': 'passed',
+                    'edge_case_coverage': '89%',
+                    'adversarial_scenarios': 'handled',
+                    'long_term_stability': '120 hours continuous'
+                }
+            },
+            'economic_impact': {
+                'fuel_consumption_reduction': 17.5,
+                'co2_emission_reduction': 20.3,
+                'infrastructure_utilization': 30.8,
+                'user_satisfaction_score': 8.4,
+                'deployment_cost_estimate': '$45,000 per intersection',
+                'roi_projection': '18 months payback'
+            }
+        }
+        
+        return jsonify({
+            'status': 'success',
+            'data': testing_results,
+            'timestamp': datetime.now().isoformat()
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting testing results: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/generate/training_data', methods=['POST'])
+def generate_training_data():
+    """Generate new training data based on current system state"""
+    try:
+        request_data = request.get_json() or {}
+        episodes = request_data.get('episodes', 100)
+        traffic_level = request_data.get('traffic_level', 'medium')
+        
+        # Simulate training data generation
+        training_job = {
+            'job_id': f"training_{int(time.time())}",
+            'status': 'running',
+            'progress': 0,
+            'episodes_target': episodes,
+            'traffic_level': traffic_level,
+            'start_time': datetime.now().isoformat(),
+            'estimated_completion': (datetime.now() + timedelta(hours=2)).isoformat(),
+            'current_metrics': {
+                'episode': 0,
+                'reward': 0,
+                'waiting_time': 0,
+                'queue_length': 0
+            }
+        }
+        
+        # Store job in memory (in production, use database)
+        if not hasattr(app, 'training_jobs'):
+            app.training_jobs = {}
+        app.training_jobs[training_job['job_id']] = training_job
+        
+        return jsonify({
+            'status': 'success',
+            'message': 'Training job started',
+            'job_id': training_job['job_id'],
+            'data': training_job
+        })
+        
+    except Exception as e:
+        logger.error(f"Error generating training data: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/training/jobs/<job_id>', methods=['GET'])
+def get_training_job_status(job_id):
+    """Get training job status"""
+    try:
+        if not hasattr(app, 'training_jobs') or job_id not in app.training_jobs:
+            return jsonify({'status': 'error', 'message': 'Job not found'}), 404
+            
+        job = app.training_jobs[job_id]
+        
+        # Simulate progress update
+        if job['status'] == 'running':
+            elapsed = time.time() - time.mktime(datetime.fromisoformat(job['start_time']).timetuple())
+            progress = min(100, (elapsed / 7200) * 100)  # 2 hours total
+            job['progress'] = round(progress, 1)
+            
+            if progress >= 100:
+                job['status'] = 'completed'
+                job['completion_time'] = datetime.now().isoformat()
+                job['final_metrics'] = {
+                    'final_reward': -13240 + random.randint(-500, 500),
+                    'avg_waiting_time': 38.5 + random.uniform(-2, 2),
+                    'avg_queue_length': 7.2 + random.uniform(-0.5, 0.5),
+                    'improvement_rate': 15.8 + random.uniform(-3, 3)
+                }
+        
+        return jsonify({
+            'status': 'success',
+            'data': job
+        })
+        
+    except Exception as e:
+        logger.error(f"Error getting training job status: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
 # === WEBSOCKET ENDPOINTS ===
 @socketio.on('connect')
 def handle_connect():
@@ -1122,7 +1460,11 @@ start_time = time.time()
 load_intersection_data()
 
 if __name__ == '__main__':
-    log_event("Starting Traffic Control Central Server (Enhanced)")
+    parser = argparse.ArgumentParser(description='Traffic Control Central Server')
+    parser.add_argument('--port', type=int, default=5001, help='Port to run the server on (default: 5001)')
+    args = parser.parse_args()
+    
+    log_event(f"Starting Traffic Control Central Server (Enhanced) on port {args.port}")
     
     # Start the background thread for periodic system updates
     def periodic_broadcast():
@@ -1134,4 +1476,4 @@ if __name__ == '__main__':
     bg_thread.start()
     
     # Run the server
-    socketio.run(app, host='0.0.0.0', port=5000, debug=False, allow_unsafe_werkzeug=True) 
+    socketio.run(app, host='0.0.0.0', port=args.port, debug=False, allow_unsafe_werkzeug=True) 

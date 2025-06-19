@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:get/get.dart';
 
-class ThemeService with ChangeNotifier {
+class ThemeService extends GetxController {
   ThemeMode _themeMode = ThemeMode.system;
   
   ThemeMode get themeMode => _themeMode;
@@ -10,7 +11,9 @@ class ThemeService with ChangeNotifier {
   bool get isLightMode => _themeMode == ThemeMode.light;
   bool get isSystemMode => _themeMode == ThemeMode.system;
 
-  ThemeService() {
+  @override
+  void onInit() {
+    super.onInit();
     _loadThemeMode();
   }
 
@@ -18,12 +21,12 @@ class ThemeService with ChangeNotifier {
     final prefs = await SharedPreferences.getInstance();
     final themeIndex = prefs.getInt('themeMode') ?? 0;
     _themeMode = ThemeMode.values[themeIndex];
-    notifyListeners();
+    update();
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
     _themeMode = mode;
-    notifyListeners();
+    update();
     
     final prefs = await SharedPreferences.getInstance();
     await prefs.setInt('themeMode', mode.index);

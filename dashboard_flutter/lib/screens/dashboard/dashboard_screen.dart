@@ -167,7 +167,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
   Widget _buildDashboardContent(BuildContext context) {
     return Obx(() {
       if (_dashboardController.isLoading.value && 
-          _dashboardController.intersections.isEmpty) {
+          _dashboardController.dashboardData.isEmpty) {
         return Center(
           child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
@@ -192,35 +192,6 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            if (_dashboardController.dashboardData.isEmpty) ...[
-              Container(
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Theme.of(context).colorScheme.surfaceVariant,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(
-                    color: Theme.of(context).colorScheme.outline.withOpacity(0.2),
-                  ),
-                ),
-                child: Row(
-                  children: [
-                    Icon(
-                      Icons.info_outline,
-                      color: Theme.of(context).colorScheme.primary,
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Text(
-                        'Dashboard is loading. Make sure the backend server is running on http://localhost:5000',
-                        style: Theme.of(context).textTheme.bodyMedium,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(height: 24),
-            ],
-            
             _buildKPICards(context),
             const SizedBox(height: 24),
             _buildChartsSection(context),
@@ -247,7 +218,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
         children: [
           ResponsiveRowColumnItem(
             rowFlex: 1,
-            child:             AppleMetricCard(
+            child: AppleMetricCard(
               title: 'Active Intersections',
               value: '${summary['activeIntersections'] ?? 0}',
               subtitle: 'Currently operational',
@@ -258,7 +229,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
           ),
           ResponsiveRowColumnItem(
             rowFlex: 1,
-            child:             AppleMetricCard(
+            child: AppleMetricCard(
               title: 'Average Wait Time',
               value: '${summary['avgWaitTime'] ?? 0}s',
               subtitle: 'Across all intersections',
@@ -269,7 +240,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
           ),
           ResponsiveRowColumnItem(
             rowFlex: 1,
-            child:             AppleMetricCard(
+            child: AppleMetricCard(
               title: 'Total Vehicles',
               value: '${summary['totalVehicles'] ?? 0}',
               subtitle: 'Processed today',
@@ -285,7 +256,7 @@ class _DashboardScreenState extends State<DashboardScreen> with TickerProviderSt
               value: '${((summary['efficiency'] ?? 0.0) * 100).toInt()}%',
               subtitle: 'Overall performance',
               icon: Icons.speed,
-              color: Theme.of(context).colorScheme.secondary,
+              color: Colors.green,
               trend: '+2.1% this week',
             ),
           ),

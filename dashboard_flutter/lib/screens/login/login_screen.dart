@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:provider/provider.dart';
 import 'package:animated_text_kit/animated_text_kit.dart';
 import 'package:loading_animation_widget/loading_animation_widget.dart';
 
@@ -79,7 +78,7 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
     setState(() => _isLoading = true);
 
     try {
-      final authService = Provider.of<AuthService>(context, listen: false);
+      final authService = Get.find<AuthService>();
       final success = await authService.login(
         _usernameController.text.trim(),
         _passwordController.text,
@@ -319,8 +318,8 @@ class _LoginScreenState extends State<LoginScreen> with TickerProviderStateMixin
   }
 
   Widget _buildThemeToggle() {
-    return Consumer<ThemeService>(
-      builder: (context, themeService, child) {
+    return GetBuilder<ThemeService>(
+      builder: (themeService) {
         return Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [

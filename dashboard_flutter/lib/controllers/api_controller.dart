@@ -15,7 +15,7 @@ class ApiController extends GetxController {
   
   // Reactive variables for real-time data
   final RxBool isConnected = false.obs;
-  final RxString baseUrl = 'http://localhost:5000'.obs;
+  final RxString baseUrl = 'http://localhost:5001'.obs;
   final RxMap<String, IntersectionData> intersections = <String, IntersectionData>{}.obs;
   final RxMap<String, dynamic> systemStatus = <String, dynamic>{}.obs;
   final RxList<dynamic> realtimeEvents = <dynamic>[].obs;
@@ -381,6 +381,42 @@ class ApiController extends GetxController {
   void sendWebSocketMessage(Map<String, dynamic> message) {
     if (_wsChannel != null && isConnected.value) {
       _wsChannel!.sink.add(json.encode(message));
+    }
+  }
+
+  // New methods for intersection position and connection management
+  Future<bool> updateIntersectionPosition(String intersectionId, double latitude, double longitude) async {
+    try {
+      await _dio.put('/api/intersections/$intersectionId/position', data: {
+        'latitude': latitude,
+        'longitude': longitude,
+      });
+      return true;
+    } catch (e) {
+      // print('[API] Error updating intersection position: $e');
+      return false;
+    }
+  }
+
+  Future<bool> updateIntersectionConnection(String sourceId, String targetId) async {
+    try {
+      await _dio.post('/api/intersections/$sourceId/connections', data: {
+        'target_id': targetId,
+      });
+      return true;
+    } catch (e) {
+      // print('[API] Error updating intersection connection: $e');
+      return false;
+    }
+  }
+
+  Future<bool> removeIntersectionConnection(String sourceId, String targetId) async {
+    try {
+      await _dio.delete('/api/intersections/$sourceId/connections/$targetId');
+      return true;
+    } catch (e) {
+      // print('[API] Error removing intersection connection: $e');
+      return false;
     }
   }
 } 

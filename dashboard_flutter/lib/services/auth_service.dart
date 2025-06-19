@@ -1,7 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:get/get.dart';
 
-class AuthService with ChangeNotifier {
+class AuthService extends GetxController {
   bool _isAuthenticated = false;
   String? _userRole;
   String? _userName;
@@ -12,7 +13,9 @@ class AuthService with ChangeNotifier {
   String? get userName => _userName;
   String? get token => _token;
 
-  AuthService() {
+  @override
+  void onInit() {
+    super.onInit();
     _loadAuthState();
   }
 
@@ -22,7 +25,7 @@ class AuthService with ChangeNotifier {
     _userRole = prefs.getString('userRole');
     _userName = prefs.getString('userName');
     _token = prefs.getString('token');
-    notifyListeners();
+    update();
   }
 
   Future<bool> login(String username, String password) async {
@@ -35,7 +38,7 @@ class AuthService with ChangeNotifier {
       _token = 'demo_token_${DateTime.now().millisecondsSinceEpoch}';
       
       await _saveAuthState();
-      notifyListeners();
+      update();
       return true;
     }
     return false;
@@ -48,7 +51,7 @@ class AuthService with ChangeNotifier {
     _token = null;
     
     await _clearAuthState();
-    notifyListeners();
+    update();
   }
 
   Future<void> _saveAuthState() async {
